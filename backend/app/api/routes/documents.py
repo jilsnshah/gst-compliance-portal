@@ -43,8 +43,8 @@ DOC_RETURN_TYPE = {
     DocumentType.CHALLAN: ReturnType.GSTR3B,
     DocumentType.PAYMENT_PROOF: ReturnType.GSTR3B,
 }
+# Only the two sides of the reconciliation are broken into invoice rows.
 DOC_INVOICE_SOURCE = {
-    DocumentType.GSTR1_DATA: InvoiceSource.GSTR1_SALES,
     DocumentType.PURCHASE_REGISTER: InvoiceSource.PURCHASE_REGISTER,
     DocumentType.GSTR2B: InvoiceSource.GSTR2B,
 }

@@ -205,11 +205,12 @@ class QueryStatus(str, Enum):
 
 
 class InvoiceSource(str, Enum):
+    """Only the two sides of the reconciliation. GSTR-1 and GSTR-3B uploads are
+    stored and versioned but never broken into rows -- nothing matches against
+    them."""
+
     GSTR2B = "GSTR2B"
     PURCHASE_REGISTER = "PURCHASE_REGISTER"
-    # Outward supplies parsed from the client's GSTR-1 workbook. Used only to
-    # derive system values for the GSTR-3B control sheet.
-    GSTR1_SALES = "GSTR1_SALES"
 
 
 class MatchStatus(str, Enum):

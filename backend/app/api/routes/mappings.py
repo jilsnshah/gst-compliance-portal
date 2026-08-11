@@ -18,7 +18,6 @@ from app.storage import get_storage
 router = APIRouter(prefix="/api", tags=["column mappings"])
 
 DOC_SOURCE = {
-    DocumentType.GSTR1_DATA: InvoiceSource.GSTR1_SALES,
     DocumentType.PURCHASE_REGISTER: InvoiceSource.PURCHASE_REGISTER,
     DocumentType.GSTR2B: InvoiceSource.GSTR2B,
 }
