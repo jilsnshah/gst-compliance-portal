@@ -18,11 +18,15 @@ services:
     restart: unless-stopped
 
   # Gives the laptop a public HTTPS address so a hosted frontend can reach it.
-  # Quick tunnels need no Cloudflare account, but the URL changes every restart
-  # -- read it with:  docker compose logs tunnel | grep trycloudflare
+  # Quick tunnels need no Cloudflare account, but the URL changes every restart.
+  # Read the CURRENT one from the newest connection, not from a plain grep --
+  # the logs accumulate across restarts and a bare grep returns dead hostnames:
+  #   docker compose logs --tail 60 tunnel | grep -B4 "Registered tunnel connection"
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate --url http://api:8010
+    # --protocol http2: this network blocks or throttles UDP, so the default
+    # QUIC transport never completes its handshake with Cloudflare's edge.
+    command: tunnel --no-autoupdate --protocol http2 --url http://api:8010
     depends_on:
       - api
     restart: unless-stopped

@@ -44,9 +44,13 @@ machine; the tunnel just forwards requests to it.
 
 ```bash
 docker compose up -d --build
-docker compose logs tunnel | grep trycloudflare
+docker compose logs --tail 60 tunnel | grep -B4 "Registered tunnel connection"
 #  -> https://random-words-1234.trycloudflare.com
 ```
+
+Read the URL from the newest `Registered tunnel connection`, not with a plain
+`grep trycloudflare`: the logs accumulate across restarts, so a bare grep
+happily returns a hostname that is already dead.
 
 The tunnel is a compose service, so that one command starts it alongside the
 API. A quick tunnel needs no Cloudflare account. The URL changes every time the
@@ -78,6 +82,11 @@ Leave it on if only you are opening the link.
 **When the tunnel URL changes** you do not need to redeploy: open the site,
 expand **API:** on the login screen, paste the new URL, press Enter. It is saved
 in that browser. `?api=https://…` in the address bar does the same thing.
+
+**If every request fails with Cloudflare error 1033**, the tunnel process is
+alive but never connected -- `docker compose ps` will still say `Up`. Check for
+`failed to dial to edge with quic` in the tunnel logs; that means the network is
+dropping UDP. The compose file already pins `--protocol http2` to avoid it.
 
 **While demoing:** both containers have to stay running. Close the laptop and
 the demo dies.
