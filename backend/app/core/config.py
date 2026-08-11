@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///" + str(BASE_DIR / "gst_platform.db")
 
-    # storage backend: "local" now, "firebase" later
+    # storage backend: "local" for now; a cloud backend plugs into app/storage
     storage_backend: str = "local"
     storage_root: Path = BASE_DIR / "storage"
 
