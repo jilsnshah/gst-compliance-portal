@@ -8,7 +8,3 @@ storage/
 node_modules/
 frontend/dist/
 .DS_Store
-
-# Never commit service-account keys
-*serviceAccount*.json
-*firebase-adminsdk*.json
