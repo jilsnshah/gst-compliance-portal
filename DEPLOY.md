@@ -80,8 +80,11 @@ login screen, paste the tunnel URL, press Enter. It is saved in that browser, so
 when the tunnel URL changes you re-paste instead of redeploying. `?api=https://…`
 in the address bar does the same thing.
 
-**While demoing:** the tunnel and the container both have to stay running. Close
-the laptop and the demo dies.
+**When the tunnel URL changes**, you do not need to redeploy: open the site,
+expand **API:** on the login screen, paste the new URL, press Enter.
+
+**While demoing:** both containers have to stay running. Close the laptop and
+the demo dies.
 
 ---
 
