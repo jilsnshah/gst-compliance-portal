@@ -10,6 +10,7 @@ type Tab = "overview" | "GSTR1" | "PR_RECON" | "GSTR3B" | "documents" | "audit";
 
 const DOC_LABEL: Record<string, string> = {
   GSTR1_DATA: "GSTR-1 sales data",
+  GSTR3B_DATA: "GSTR-3B data",
   PURCHASE_REGISTER: "Purchase Register",
   GSTR2B: "GSTR-2B",
   CHALLAN: "Challan",
@@ -236,9 +237,16 @@ const RECON_OVERRIDES: Record<string, Partial<StageMeta>> = {
 };
 
 const GSTR3B_OVERRIDES: Record<string, Partial<StageMeta>> = {
+  AWAITING_CLIENT_DATA: {
+    ca: "Waiting for the client's GSTR-3B figures. You can upload them on their behalf below.",
+  },
   UNDER_CA_REVIEW: {
-    ca: "Check the portal's 3B figures against the control sheet above. Issue a challan if tax is payable.",
+    ca: "Check the client's figures against the GST portal. Upload the challan below if tax is payable.",
     actions: [{ to: "VERIFIED", label: "Nothing payable — sign off", primary: true }],
+  },
+  AWAITING_PAYMENT: {
+    ca: "Challan is with the client. Their confirmation clears this for filing.",
+    actions: [{ to: "UNDER_CA_REVIEW", label: "Withdraw challan" }],
   },
 };
 
@@ -879,6 +887,21 @@ function Gstr3b({ item, caseData, reload }: { item: ReturnItem; caseData: any; r
         <StageStatus item={item} reload={reload} />
       </Card>
 
+      <Card title="Client's GSTR-3B data">
+        <VersionList documents={caseData.documents} docTypes={["GSTR3B_DATA"]} />
+        {!item.is_terminal && (
+          <div style={{ marginTop: 12 }}>
+            <UploadBox
+              caseId={caseData.id}
+              docType="GSTR3B_DATA"
+              returnItemId={item.id}
+              reload={reload}
+              allowOnBehalf
+            />
+          </div>
+        )}
+      </Card>
+
       <Card title="Tax payment">
         {w.challan ? (
           <div className="row between">
@@ -1056,6 +1079,7 @@ const DOC_SLOTS: {
   { docType: "GSTR1_DATA", returnType: "GSTR1", label: "GSTR-1 sales data", expectedFrom: "Client" },
   { docType: "ACKNOWLEDGEMENT", returnType: "GSTR1", label: "GSTR-1 filing acknowledgement", expectedFrom: "CA team" },
   { docType: "GSTR2B", returnType: "PR_RECON", label: "GSTR-2B", expectedFrom: "CA team" },
+  { docType: "GSTR3B_DATA", returnType: "GSTR3B", label: "GSTR-3B data", expectedFrom: "Client" },
   { docType: "PURCHASE_REGISTER", returnType: "PR_RECON", label: "Purchase Register", expectedFrom: "Client" },
   // Only needed when there is tax to pay.
   { docType: "CHALLAN", returnType: "GSTR3B", label: "GST challan", expectedFrom: "CA team", optional: true },

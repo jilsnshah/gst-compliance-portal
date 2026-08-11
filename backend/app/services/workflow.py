@@ -147,7 +147,9 @@ def _prerequisites_ok(db: Session, item: ReturnItem, target: S) -> Optional[str]
     reconciliation is finalised. Returns a reason string when blocked."""
     if item.return_type != ReturnType.GSTR3B:
         return None
-    if target == S.UNDER_CA_REVIEW:
+    # Collecting and reviewing the client's own 3B figures is fine at any time;
+    # only issuing a challan, signing off or filing needs the others finished.
+    if target in (S.AWAITING_CLIENT_DATA, S.CLIENT_DATA_SUBMITTED, S.UNDER_CA_REVIEW):
         return None
     siblings = db.execute(
         select(ReturnItem).where(

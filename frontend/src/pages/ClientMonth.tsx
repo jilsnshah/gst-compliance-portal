@@ -134,6 +134,28 @@ export default function ClientMonth() {
             : "Everything matched — your CA team is finalising.",
     },
     {
+      key: "gstr3b-data",
+      title: "GSTR-3B data",
+      item: b3,
+      state:
+        b3.client_status === "DONE" || b3.status === "VERIFIED" || workings?.challan
+          ? "done"
+          : b3.gate_reason
+            ? "locked"
+            : b3.client_status === "ACTION_NEEDED"
+              ? "yours"
+              : "with_ca",
+      line: b3.gate_reason
+        ? b3.gate_reason
+        : b3.client_status === "DONE" || b3.status === "VERIFIED" || workings?.challan
+          ? "Checked by your CA team."
+          : b3.client_status === "ACTION_NEEDED"
+            ? b3.has_open_query
+              ? "Your CA team has asked you something below."
+              : "Upload your GSTR-3B figures for this month."
+            : "Your CA team is checking your figures.",
+    },
+    {
       key: "payment",
       title: "Tax payment",
       item: b3,
@@ -246,8 +268,13 @@ function StepBody({
   ack: any;
   reload: () => void;
 }) {
-  if (step.key === "sales" || step.key === "purchase") {
-    const docType = step.key === "sales" ? "GSTR1_DATA" : "PURCHASE_REGISTER";
+  if (step.key === "sales" || step.key === "purchase" || step.key === "gstr3b-data") {
+    const docType =
+      step.key === "sales"
+        ? "GSTR1_DATA"
+        : step.key === "purchase"
+          ? "PURCHASE_REGISTER"
+          : "GSTR3B_DATA";
     return (
       <>
         <ClientUpload caseId={data.id} docType={docType} item={step.item!} reload={reload} />

@@ -75,6 +75,8 @@ TRACK_STATES = {
         ReturnStatus.VERIFIED,
     ],
     "GSTR3B": [
+        ReturnStatus.AWAITING_CLIENT_DATA,
+        ReturnStatus.CLIENT_DATA_SUBMITTED,
         ReturnStatus.UNDER_CA_REVIEW,
         ReturnStatus.AWAITING_PAYMENT,
         ReturnStatus.VERIFIED,
@@ -85,8 +87,7 @@ TRACK_STATES = {
 INITIAL_STATUS = {
     "GSTR1": ReturnStatus.AWAITING_CLIENT_DATA,
     "PR_RECON": ReturnStatus.AWAITING_CLIENT_DATA,
-    # GSTR-3B needs no client upload -- the CA starts from the portal figures.
-    "GSTR3B": ReturnStatus.UNDER_CA_REVIEW,
+    "GSTR3B": ReturnStatus.AWAITING_CLIENT_DATA,
 }
 
 TERMINAL_STATUS = {
@@ -148,6 +149,7 @@ class CaseStatus(str, Enum):
 
 class DocumentType(str, Enum):
     GSTR1_DATA = "GSTR1_DATA"
+    GSTR3B_DATA = "GSTR3B_DATA"
     PURCHASE_REGISTER = "PURCHASE_REGISTER"
     GSTR2B = "GSTR2B"
     CHALLAN = "CHALLAN"
@@ -162,6 +164,7 @@ class DocumentType(str, Enum):
 # on behalf of the client (uploaded_on_behalf_of flag).
 CLIENT_SUPPLIED_DOCS = {
     DocumentType.GSTR1_DATA,
+    DocumentType.GSTR3B_DATA,
     DocumentType.PURCHASE_REGISTER,
     DocumentType.PAYMENT_PROOF,
     DocumentType.SUPPORTING,
@@ -183,6 +186,7 @@ class DocumentVersionStatus(str, Enum):
 # Only the client's own data goes through a verify/reject cycle.
 REVIEWABLE_DOCS = {
     DocumentType.GSTR1_DATA,
+    DocumentType.GSTR3B_DATA,
     DocumentType.PURCHASE_REGISTER,
 }
 

@@ -86,7 +86,7 @@ size, checksum and an *uploaded on behalf of client* flag so CA staff can upload
 |---|---|---|
 | GSTR-1 | `AWAITING_CLIENT_DATA → CLIENT_DATA_SUBMITTED → UNDER_CA_REVIEW → VERIFIED → FILED` | `FILED` |
 | Purchase recon | `AWAITING_CLIENT_DATA → CLIENT_DATA_SUBMITTED → UNDER_CA_REVIEW → VERIFIED` | `VERIFIED` |
-| GSTR-3B | `UNDER_CA_REVIEW → AWAITING_PAYMENT → VERIFIED → FILED` | `FILED` |
+| GSTR-3B | `AWAITING_CLIENT_DATA → CLIENT_DATA_SUBMITTED → UNDER_CA_REVIEW → AWAITING_PAYMENT → VERIFIED → FILED` | `FILED` |
 
 There is deliberately no query/revision/resubmit state. All of that happens inside
 `UNDER_CA_REVIEW`: the client keeps uploading new versions and replying in the discussion until the
@@ -123,9 +123,10 @@ mismatch report is a workflow, not a spreadsheet. The client sees the same six c
 Purchase matching step, in plain language ("Your supplier has not reported this invoice yet"), and
 can download the same Excel workbook the CA team works from.
 
-**GSTR-3B** — no figures are entered into this system at all. The CA reads the return on the GST
-portal; uploading a challan is how they say tax is payable, and signing the return off without one
-is how they say it is not.
+**GSTR-3B** — the same shape as GSTR-1: the client uploads their GSTR-3B figures, the CA reviews
+them against the GST portal, and the payment branch is spliced in after that review. Uploading a
+challan is how the CA says tax is payable; signing off without one is how they say it is not. No
+figures are keyed into this system either way.
 
 The challan is **a PDF, not a data entry screen**: the CA uploads the file downloaded from the GST
 portal, which puts the return into `AWAITING_PAYMENT`. The client downloads it, pays on the portal

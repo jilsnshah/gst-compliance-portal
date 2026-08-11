@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["documents"])
 # Which document type feeds which workflow track and invoice source.
 DOC_RETURN_TYPE = {
     DocumentType.GSTR1_DATA: ReturnType.GSTR1,
+    DocumentType.GSTR3B_DATA: ReturnType.GSTR3B,
     DocumentType.PURCHASE_REGISTER: ReturnType.PR_RECON,
     DocumentType.GSTR2B: ReturnType.PR_RECON,
     DocumentType.CHALLAN: ReturnType.GSTR3B,
@@ -52,7 +53,11 @@ EXCEL_SUFFIXES = (".xlsx", ".xlsm")
 # Uploading one of these IS the client's data landing for that track, whoever
 # physically pressed the button. CA staff doing it for the client is the same
 # event -- only the provenance recorded on the version differs.
-STAGE_DATA_DOCS = {DocumentType.GSTR1_DATA, DocumentType.PURCHASE_REGISTER}
+STAGE_DATA_DOCS = {
+    DocumentType.GSTR1_DATA,
+    DocumentType.GSTR3B_DATA,
+    DocumentType.PURCHASE_REGISTER,
+}
 
 
 def _resolve_return_item(

@@ -62,6 +62,8 @@ export interface ReturnItem {
   waiting_on: "CLIENT" | "CA" | "NOBODY";
   has_open_query: boolean;
   blocked_reason: string | null;
+  /** Why this track is not the client's problem yet, e.g. "Starts once GSTR-1 is filed". */
+  gate_reason: string | null;
   internal_status?: string;
 }
 
