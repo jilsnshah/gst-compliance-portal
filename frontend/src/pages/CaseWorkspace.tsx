@@ -419,23 +419,6 @@ function UploadBox({
   );
 }
 
-function LatestMapper({
-  documents,
-  docType,
-  reload,
-}: {
-  documents: any[];
-  docType: string;
-  reload: () => void;
-}) {
-  const doc = documents.find((d: any) => d.doc_type === docType);
-  const latest = doc?.versions?.length ? doc.versions[doc.versions.length - 1] : null;
-  if (!latest) return null;
-  return (
-    <ColumnMapper versionId={latest.id} filename={latest.original_filename} onDone={reload} />
-  );
-}
-
 function VersionList({ documents, docTypes }: { documents: any[]; docTypes: string[] }) {
   const docs = documents.filter((d) => docTypes.includes(d.doc_type));
   if (docs.length === 0) return <div className="empty">No files uploaded yet.</div>;
@@ -632,7 +615,6 @@ function ReturnTrack({
 
       <Card title="Client's data">
         <VersionList documents={caseData.documents} docTypes={[docType]} />
-        {ca && <LatestMapper documents={caseData.documents} docType={docType} reload={reload} />}
         {!item.is_terminal && (
           <div style={{ marginTop: 12 }}>
             <UploadBox caseId={caseData.id} docType={docType} returnItemId={item.id} reload={reload} allowOnBehalf />
@@ -925,7 +907,6 @@ function Gstr3b({ item, caseData, reload }: { item: ReturnItem; caseData: any; r
 
       <Card title="Client's GSTR-3B data">
         <VersionList documents={caseData.documents} docTypes={["GSTR3B_DATA"]} />
-        {ca && <LatestMapper documents={caseData.documents} docType="GSTR3B_DATA" reload={reload} />}
         {!item.is_terminal && (
           <div style={{ marginTop: 12 }}>
             <UploadBox
