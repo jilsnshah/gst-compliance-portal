@@ -44,48 +44,43 @@ machine; the tunnel just forwards requests to it.
 
 ```bash
 docker compose up -d --build
-
-brew install cloudflared
-cloudflared tunnel --url http://localhost:8010
+docker compose logs tunnel | grep trycloudflare
 #  -> https://random-words-1234.trycloudflare.com
 ```
 
-That URL only lives as long as the command runs, and you get a new one each
-time. `ngrok http 8010` works the same way; its free tier includes one stable
-subdomain, which saves re-pasting.
+The tunnel is a compose service, so that one command starts it alongside the
+API. A quick tunnel needs no Cloudflare account. The URL changes every time the
+tunnel container restarts; `ngrok` free includes one stable subdomain if the
+re-pasting gets tiring.
 
-**2. Let the tunnel origin through CORS**
+CORS already allows any `*.vercel.app` origin via `CORS_ORIGIN_REGEX`, so there
+is nothing to configure for a Vercel frontend.
 
-Edit `docker-compose.yml` → `CORS_ORIGINS`, adding your Vercel URL:
-
-```yaml
-CORS_ORIGINS: "http://localhost:5173,https://your-app.vercel.app"
-```
-
-Then `docker compose up -d` again. Vercel preview deployments are already
-covered by the `CORS_ORIGIN_REGEX` entry.
-
-**3. Deploy the frontend**
+**2. Deploy the frontend**
 
 ```bash
 cd frontend
-npx vercel            # root directory: frontend
+npx vercel deploy --prod --yes -b VITE_API_URL="$(cd .. && docker compose logs tunnel \
+  | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1)"
 ```
 
-Set `VITE_API_URL` in Vercel's environment variables to the tunnel URL, and
-redeploy so it is baked into the build.
+`-b` passes the tunnel URL as a build-time variable, so it is baked into the
+bundle.
 
-**Or skip that entirely:** open the deployed site and expand **API:** on the
-login screen, paste the tunnel URL, press Enter. It is saved in that browser, so
-when the tunnel URL changes you re-paste instead of redeploying. `?api=https://…`
-in the address bar does the same thing.
+**3. Turn off Vercel's deployment protection**
 
-**When the tunnel URL changes**, you do not need to redeploy: open the site,
-expand **API:** on the login screen, paste the new URL, press Enter.
+New Vercel projects are private by default — anyone but you gets bounced to a
+Vercel login page. Dashboard → your project → Settings → Deployment Protection
+→ Vercel Authentication → **Disabled**.
+
+Leave it on if only you are opening the link.
+
+**When the tunnel URL changes** you do not need to redeploy: open the site,
+expand **API:** on the login screen, paste the new URL, press Enter. It is saved
+in that browser. `?api=https://…` in the address bar does the same thing.
 
 **While demoing:** both containers have to stay running. Close the laptop and
 the demo dies.
-
 ---
 
 ## Your data
