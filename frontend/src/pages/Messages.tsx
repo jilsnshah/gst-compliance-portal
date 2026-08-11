@@ -74,7 +74,7 @@ export default function Inbox() {
                     {i.requires_revision && <div className="sub">A corrected file must be uploaded</div>}
                   </td>
                   <td className="sub">
-                    {i.period_label} · {i.return_type === "PR_RECON" ? "Reconciliation" : i.return_type}
+                    {i.period_label} · {i.return_label ?? i.return_type}
                     {i.invoice_match_id && " · invoice"}
                   </td>
                   <td>

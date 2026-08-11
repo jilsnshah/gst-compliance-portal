@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import (
     CLIENT_STATUS_LABELS,
+    ClientVisibleStatus,
     RETURN_LABELS,
     QueryStatus,
     ReturnStatus,
@@ -33,6 +34,7 @@ from app.models import (
 )
 from app.services.workflow import (
     allowed_next,
+    client_gate_reason,
     client_visible_status,
     pending_prerequisites,
     progress_for,
@@ -141,9 +143,15 @@ def return_item_out(
     viewer: User,
     waiting_on_client: bool = False,
     blocked_reason: Optional[str] = None,
+    gate_reason: Optional[str] = None,
 ) -> dict:
     internal = ReturnStatus(item.status)
+    # A gated step is never the client's turn -- unless the CA has actually
+    # asked them something, which outranks the sequence.
+    gated = bool(gate_reason) and not waiting_on_client
     visible = client_visible_status(item.return_type, internal, waiting_on_client)
+    if gated and visible == ClientVisibleStatus.ACTION_NEEDED:
+        visible = ClientVisibleStatus.WITH_CA
     is_client = Role(viewer.role) == Role.CLIENT
     terminal = is_terminal(item.return_type, internal)
     out = {
@@ -171,6 +179,7 @@ def return_item_out(
             [] if blocked_reason else allowed_next(item.return_type, internal, Role(viewer.role))
         ),
         "blocked_reason": blocked_reason,
+        "gate_reason": gate_reason if gated else None,
     }
     if not is_client:
         out["internal_status"] = internal.value
@@ -213,6 +222,7 @@ def case_out(db: Session, case: ComplianceCase, viewer: User, detail: bool = Fal
                 viewer,
                 i.id in waiting,
                 blocked if ReturnType(i.return_type) == ReturnType.GSTR3B else None,
+                client_gate_reason(case.return_items, i),
             )
             for i in case.return_items
         ],

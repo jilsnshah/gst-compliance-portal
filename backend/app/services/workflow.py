@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import (
     CA_ROLES,
+    CLIENT_STATUS_LABELS,
+    RETURN_LABELS,
     TRACK_STATES,
     AuditAction,
     CaseStatus,
@@ -121,6 +123,25 @@ def pending_prerequisites(items) -> list:
     return pending
 
 
+def client_gate_reason(items, item) -> Optional[str]:
+    """Why this track is not the client's problem yet.
+
+    Sequencing is real: the Purchase Register is only asked for once GSTR-1 is
+    filed, and GSTR-3B only after the reconciliation. Without this the client is
+    told "Your turn" for a step that cannot sensibly start, and the dashboard
+    card and the stepper end up disagreeing about the same month.
+    """
+    key = track_key(item.return_type)
+    if key == "PR_RECON":
+        gstr1 = next((i for i in items if track_key(i.return_type) == "GSTR1"), None)
+        if gstr1 is not None and not is_terminal(gstr1.return_type, gstr1.status):
+            return "Starts once GSTR-1 is filed"
+        return None
+    if key == "GSTR3B" and pending_prerequisites(items):
+        return "Starts once GSTR-1 and the reconciliation are finished"
+    return None
+
+
 def _prerequisites_ok(db: Session, item: ReturnItem, target: S) -> Optional[str]:
     """GSTR-3B may not be signed off or filed until GSTR-1 is filed and the
     reconciliation is finalised. Returns a reason string when blocked."""
@@ -215,18 +236,34 @@ def transition(
         case_id=case.id,
         meta={"from": current.value, "to": to_status.value, "note": note},
     )
+    # Two audiences, two wordings. CA staff want the internal hop; the client
+    # only wants to hear when *their* view of it changes, in their own words --
+    # UNDER_CA_REVIEW -> VERIFIED is still "with your CA team" and is not news.
+    label = RETURN_LABELS[ReturnType(item.return_type)]
     notifications.notify(
         db,
         NotificationType.STATUS_CHANGED,
-        title=f"{track_key(item.return_type)}: "
-              f"{client_visible_status(item.return_type, to_status).value}",
+        title=f"{label}: {current.value.replace('_', ' ').title()} \u2192 "
+              f"{to_status.value.replace('_', ' ').title()}",
         body=note or "",
         case=case,
         return_item=item,
-        to_client=True,
         to_ca=True,
         exclude_user_id=user.id,
     )
+    was = client_visible_status(item.return_type, current)
+    now = client_visible_status(item.return_type, to_status)
+    if now != was:
+        notifications.notify(
+            db,
+            NotificationType.STATUS_CHANGED,
+            title=f"{label} \u2014 {CLIENT_STATUS_LABELS[now]}",
+            body=note or "",
+            case=case,
+            return_item=item,
+            to_client=True,
+            exclude_user_id=user.id,
+        )
 
     _roll_up_case(db, case)
     return item

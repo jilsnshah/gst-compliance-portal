@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.api.serializers import message_out, query_out
 from app.core.db import get_db
-from app.core.enums import AuditAction, MismatchResolution, QueryStatus, Role
+from app.core.enums import (
+    RETURN_LABELS,
+    AuditAction,
+    MismatchResolution,
+    QueryStatus,
+    ReturnType,
+    Role,
+)
 from app.models import Conversation, InvoiceMatch, Query, ReturnItem, User
 from app.services import audit, discussion
 from app.services.permissions import get_case_or_403, get_return_item_or_403, require_ca
@@ -225,6 +232,7 @@ def inbox(db: Session = Depends(get_db), user: User = Depends(get_current_user))
             "period_label": period.label,
             "return_item_id": item.id,
             "return_type": item.return_type if isinstance(item.return_type, str) else item.return_type.value,
+            "return_label": RETURN_LABELS[ReturnType(item.return_type)],
             "invoice_match_id": q.invoice_match_id,
         })
     return {"items": items, "waiting_on_me": sum(1 for i in items if i["mine"])}
