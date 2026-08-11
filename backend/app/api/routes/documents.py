@@ -4,12 +4,13 @@ import io
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.serializers import document_out, version_out
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.enums import (
     CLIENT_SUPPLIED_DOCS,
@@ -190,13 +191,22 @@ def download_version(
     case = db.get(ComplianceCase, document.case_id)
     assert_client_access(db, user, case.client_id)
 
-    data = get_storage().read(version.storage_key)
     audit.record(
         db, user, AuditAction.DOWNLOAD, "DocumentVersion",
         f"{document.title} v{version.version_no} downloaded",
         target_id=version.id, client_id=case.client_id, case_id=case.id,
     )
     db.commit()
+
+    # Permission has been checked above; only now is a direct bucket URL handed
+    # out, and only for a few minutes.
+    if settings.use_signed_urls and settings.storage_backend != "local":
+        return RedirectResponse(
+            get_storage().signed_url(version.storage_key, settings.signed_url_ttl_seconds),
+            status_code=307,
+        )
+
+    data = get_storage().read(version.storage_key)
     return StreamingResponse(
         io.BytesIO(data),
         media_type=version.content_type or "application/octet-stream",

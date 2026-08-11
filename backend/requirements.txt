@@ -10,3 +10,5 @@ bcrypt==4.0.1
 openpyxl==3.1.5
 pandas==2.2.3
 email-validator==2.2.0
+# Only needed when STORAGE_BACKEND=firebase
+firebase-admin==6.5.0

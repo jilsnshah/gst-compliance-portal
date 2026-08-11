@@ -162,19 +162,42 @@ engine, the GSTR-3B control sheet, manual state control and the audit trail.
 
 ---
 
-## Swapping in Firebase (Stage 2)
+## Storage: local disk or Firebase
 
-Three seams were built for it; nothing else should need to change.
+Everything in the app handles an opaque `storage_key` string and calls `StorageBackend`
+(`backend/app/storage/base.py`), so switching where files actually live touches nothing else.
 
-1. **Storage** — implement `StorageBackend` (`backend/app/storage/base.py`) as `FirebaseStorage`
-   and return it from `get_storage()`. The rest of the app only ever handles a `storage_key` string.
-2. **Auth** — replace the token decode in `backend/app/api/deps.py::get_current_user` with a Firebase
+```bash
+cp .env.example backend/.env      # then edit backend/.env
+```
+
+| Setting | Meaning |
+|---|---|
+| `STORAGE_BACKEND` | `local` (writes to `storage/`) or `firebase` |
+| `FIREBASE_BUCKET` | from the Firebase console → Storage, e.g. `my-project.appspot.com` |
+| `FIREBASE_CREDENTIALS_FILE` | service-account JSON: Project settings → Service accounts → Generate new private key. Keep it **outside** the repo |
+| `USE_SIGNED_URLS` | `true` serves downloads as short-lived signed URLs straight from the bucket instead of streaming through the API |
+| `SIGNED_URL_TTL_SECONDS` | how long those links live (default 900) |
+
+Verify the configuration before trusting it — this round-trips a real file through whichever backend
+`.env` selects:
+
+```bash
+cd backend && .venv/bin/python check_storage.py
+```
+
+Signed URLs are only ever minted **after** the download endpoint has checked that the caller may see
+that document, so bucket access stays private; the link is just a short-lived delivery mechanism.
+Keep the bucket's security rules closed — all access goes through the service account, never the
+browser.
+
+## Still to swap for Stage 2
+
+1. **Auth** — replace the token decode in `backend/app/api/deps.py::get_current_user` with a Firebase
    ID-token verification that resolves to a `User` row via `external_uid`. The `User` model already
    carries `auth_provider` and `external_uid`. Every route keeps its `Depends(get_current_user)`.
-3. **Database** — change `database_url` in `backend/app/core/config.py` to Postgres and introduce
+2. **Database** — change `database_url` in `backend/app/core/config.py` to Postgres and introduce
    Alembic (the dev stage uses `Base.metadata.create_all`).
-
----
 
 ## Known dev-stage shortcuts
 
@@ -184,7 +207,8 @@ Intentional, because this is not production yet:
 - Sessions live in `sessionStorage`, so each browser tab holds its own login — handy for driving the
   CA and client portals side by side. The trade-off is that a brand-new tab starts signed out.
 - `create_all()` instead of migrations — a model change needs `seed.py --reset`.
-- SQLite and local disk; file downloads stream through the API rather than signed URLs.
+- SQLite. File storage is pluggable (see above); downloads stream through the API unless
+  `USE_SIGNED_URLS` is on.
 - Notifications are polled, not pushed.
 - No file-type/virus validation beyond an extension check on workbooks.
 - GST portal integration is entirely manual by design.
