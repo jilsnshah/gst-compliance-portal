@@ -23,7 +23,7 @@ from app.core.enums import (
     Role,
 )
 from app.models import ComplianceCase, Document, DocumentVersion, InvoiceRecord, ReturnItem, User
-from app.services import audit, documents, parser, workflow
+from app.services import audit, documents, parser, uploads, workflow
 from app.services.permissions import (
     assert_client_access,
     get_case_or_403,
@@ -102,18 +102,20 @@ async def upload_document(
     on_behalf = not is_client and doc_type in CLIENT_SUPPLIED_DOCS
 
     data = await file.read()
-    if not data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
+    try:
+        name, content_type = uploads.validate(file.filename or "", data)
+    except uploads.RejectedUpload as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
 
     item = _resolve_return_item(db, case, doc_type, return_item_id)
     document = documents.get_or_create_document(db, case, doc_type, user, item)
     version = documents.add_version(
-        db, user, document, file.filename, data, file.content_type or "", on_behalf, remarks
+        db, user, document, name, data, content_type, on_behalf, remarks
     )
 
     parse_report = None
     source = DOC_INVOICE_SOURCE.get(doc_type)
-    if source and file.filename.lower().endswith(EXCEL_SUFFIXES):
+    if source and name.lower().endswith(EXCEL_SUFFIXES + (".csv",)):
         parse_report = _ingest_invoices(db, case, version, source, data)
 
     if item:
@@ -206,7 +208,10 @@ def download_version(
         io.BytesIO(data),
         media_type=version.content_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{version.original_filename}"'
+            "Content-Disposition": f'attachment; filename="{version.original_filename}"',
+            # Serve exactly what we stored, and never let the browser guess
+            # otherwise -- guessing is how an upload becomes script on our origin.
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

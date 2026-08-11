@@ -21,7 +21,14 @@ from app.core.enums import (
 )
 from app.models import ComplianceCase, Document, Filing, GSTR3BPayment, ReturnItem, User
 from app.schemas.requests import FilingRecord
-from app.services import audit, documents, gstr3b as gstr3b_service, notifications, workflow
+from app.services import (
+    audit,
+    documents,
+    gstr3b as gstr3b_service,
+    notifications,
+    uploads,
+    workflow,
+)
 from app.services.permissions import get_case_or_403, get_return_item_or_403, require_ca
 
 router = APIRouter(prefix="/api", tags=["gstr3b"])
@@ -109,16 +116,15 @@ async def upload_challan(
     case = db.get(ComplianceCase, item.case_id)
 
     data = await file.read()
-    if not data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
+    try:
+        name, content_type = uploads.validate(file.filename or "", data)
+    except uploads.RejectedUpload as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
 
     document = documents.get_or_create_document(
         db, case, DocumentType.CHALLAN, user, item, title="GST Challan"
     )
-    version = documents.add_version(
-        db, user, document, file.filename, data, file.content_type or "application/pdf",
-        remarks=note,
-    )
+    version = documents.add_version(db, user, document, name, data, content_type, remarks=note)
 
     row = gstr3b_service.get_or_create_payment(db, case, user)
     row.payment_status = PaymentStatus.CHALLAN_ISSUED
@@ -158,11 +164,15 @@ async def confirm_payment(
     if file is not None and file.filename:
         data = await file.read()
         if data:
+            try:
+                name, content_type = uploads.validate(file.filename or "", data)
+            except uploads.RejectedUpload as exc:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
             proof_doc = documents.get_or_create_document(
                 db, case, DocumentType.PAYMENT_PROOF, user, item, title="Payment proof"
             )
             documents.add_version(
-                db, user, proof_doc, file.filename, data, file.content_type or "",
+                db, user, proof_doc, name, data, content_type,
                 on_behalf_of_client=Role(user.role) != Role.CLIENT,
             )
 
@@ -241,16 +251,16 @@ async def upload_acknowledgement(
     case = db.get(ComplianceCase, item.case_id)
 
     data = await file.read()
-    if not data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
+    try:
+        name, content_type = uploads.validate(file.filename or "", data)
+    except uploads.RejectedUpload as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
 
     document = documents.get_or_create_document(
         db, case, DocumentType.ACKNOWLEDGEMENT, user, item,
         title=f"{item.return_type} Acknowledgement",
     )
-    version = documents.add_version(
-        db, user, document, file.filename, data, file.content_type or "application/pdf"
-    )
+    version = documents.add_version(db, user, document, name, data, content_type)
 
     filing = db.execute(select(Filing).where(Filing.return_item_id == item.id)).scalars().first()
     if filing:

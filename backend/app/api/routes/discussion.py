@@ -220,25 +220,27 @@ async def upload_attachment(
     document so it is downloadable, audited and never overwritten. Both sides
     may attach; the message carries who sent it."""
     from app.core.enums import DocumentType
-    from app.services import documents as docs_service
+    from app.services import documents as docs_service, uploads
     from app.services.permissions import get_case_or_403
 
     case = get_case_or_403(db, user, case_id)
     data = await file.read()
-    if not data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
     if len(data) > MAX_ATTACHMENT_BYTES:
         raise HTTPException(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             f"Attachments are limited to {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB",
         )
+    # The name and the browser-declared type are both chosen by the uploader,
+    # so neither is trusted: the bytes decide.
+    try:
+        name, content_type = uploads.validate(file.filename or "", data)
+    except uploads.RejectedUpload as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
 
     document = docs_service.get_or_create_document(
         db, case, DocumentType.MESSAGE_ATTACHMENT, user, title="Chat attachments"
     )
-    version = docs_service.add_version(
-        db, user, document, file.filename, data, file.content_type or ""
-    )
+    version = docs_service.add_version(db, user, document, name, data, content_type)
     db.commit()
     return {
         "document_version_id": version.id,

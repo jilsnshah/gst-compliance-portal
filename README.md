@@ -200,5 +200,8 @@ Intentional, because this is not production yet:
 - `create_all()` instead of migrations — a model change needs `seed.py --reset`.
 - SQLite and local disk; file downloads stream through the API rather than signed URLs.
 - Notifications are polled, not pushed.
-- No file-type/virus validation beyond an extension check on workbooks.
+- Uploads are validated by content, not by name: extension allowlist, magic-byte
+  check that the bytes match the extension, filename sanitisation, 10 MB cap on
+  chat attachments, and `nosniff` on download. SVG and HTML are refused outright
+  since both can carry script. There is still no virus scanning.
 - GST portal integration is entirely manual by design.
