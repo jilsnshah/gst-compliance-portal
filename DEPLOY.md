@@ -63,13 +63,13 @@ is nothing to configure for a Vercel frontend.
 **2. Deploy the frontend**
 
 ```bash
-cd frontend
-npx vercel deploy --prod --yes -b VITE_API_URL="$(cd .. && docker compose logs tunnel \
-  | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1)"
+./deploy-frontend.sh
 ```
 
-`-b` passes the tunnel URL as a build-time variable, so it is baked into the
-bundle.
+It probes each hostname the tunnel has announced, picks the one that actually
+answers, and builds against that. Do not read the URL out of the logs by hand:
+the logs keep every hostname the container has ever had, so the newest line is
+not necessarily the live one -- that has shipped a dead URL more than once.
 
 **3. Turn off Vercel's deployment protection**
 
