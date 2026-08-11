@@ -297,6 +297,9 @@ def message_out(msg: Message, author: Optional[User] = None) -> dict:
             {
                 "id": a.id,
                 "document_version_id": a.document_version_id,
+                "filename": a.version.original_filename if a.version else None,
+                "size_bytes": a.version.size_bytes if a.version else None,
+                "content_type": a.version.content_type if a.version else None,
                 "download_url": f"/api/documents/versions/{a.document_version_id}/download",
             }
             for a in msg.attachments

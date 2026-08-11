@@ -623,7 +623,7 @@ function ReturnTrack({
       </Card>
 
       <Card title="Discussion with the client">
-        <Discussion returnItemId={item.id} onChange={reload} />
+        <Discussion returnItemId={item.id} caseId={caseData.id} onChange={reload} />
       </Card>
     </>
   );
@@ -776,19 +776,19 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
                 </button>
               ))}
             </div>
-            <MatchTable rows={reports.reports[bucket] ?? []} reload={load} />
+            <MatchTable rows={reports.reports[bucket] ?? []} caseId={caseData.id} reload={load} />
           </Card>
         </>
       )}
 
       <Card title="Discussion with the client">
-        <Discussion returnItemId={item.id} onChange={reload} />
+        <Discussion returnItemId={item.id} caseId={caseData.id} onChange={reload} />
       </Card>
     </>
   );
 }
 
-function MatchTable({ rows, reload }: { rows: any[]; reload: () => void }) {
+function MatchTable({ rows, caseId, reload }: { rows: any[]; caseId: number; reload: () => void }) {
   const { user } = useAuth();
   const ca = isCA(user?.role);
   const [open, setOpen] = useState<number | null>(null);
@@ -860,7 +860,7 @@ function MatchTable({ rows, reload }: { rows: any[]; reload: () => void }) {
                         {m.resolution_note && <span className="sub">· {m.resolution_note}</span>}
                       </div>
                     )}
-                    <Discussion matchId={m.id} compact onChange={reload} />
+                    <Discussion matchId={m.id} caseId={caseId} compact onChange={reload} />
                   </td>
                 </tr>
               )}
@@ -968,7 +968,7 @@ function Gstr3b({ item, caseData, reload }: { item: ReturnItem; caseData: any; r
       </Card>
 
       <Card title="Discussion with the client">
-        <Discussion returnItemId={item.id} onChange={reload} />
+        <Discussion returnItemId={item.id} caseId={caseData.id} onChange={reload} />
       </Card>
     </>
   );

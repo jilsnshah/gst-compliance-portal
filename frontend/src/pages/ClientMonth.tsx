@@ -280,7 +280,7 @@ function StepBody({
         <ClientUpload caseId={data.id} docType={docType} item={step.item!} reload={reload} />
         <FileHistory documents={data.documents} docType={docType} />
         <h3 style={{ marginTop: 18 }}>Messages</h3>
-        <Discussion returnItemId={step.item!.id} onChange={reload} />
+        <Discussion returnItemId={step.item!.id} caseId={data.id} onChange={reload} />
       </>
     );
   }
@@ -309,7 +309,7 @@ function StepBody({
       <>
         <MatchingReport recon={recon} caseId={data.id} period={data.period.code} />
         <h3 style={{ marginTop: 18 }}>Messages</h3>
-        <Discussion returnItemId={step.item!.id} onChange={reload} />
+        <Discussion returnItemId={step.item!.id} caseId={data.id} onChange={reload} />
       </>
     );
   }

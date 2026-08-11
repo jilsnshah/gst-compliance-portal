@@ -67,6 +67,7 @@ class MessageAttachment(Base):
     document_version_id: Mapped[int] = mapped_column(ForeignKey("document_versions.id"))
 
     message: Mapped[Message] = relationship(back_populates="attachments")
+    version: Mapped["DocumentVersion"] = relationship("DocumentVersion", lazy="joined")
 
 
 class Notification(Base):

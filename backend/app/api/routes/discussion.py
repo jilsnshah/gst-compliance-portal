@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api", tags=["discussion"])
 class DiscussionPost(BaseModel):
     body: str
     is_internal_note: bool = False
+    # Files already uploaded through /cases/{id}/attachments.
+    document_version_ids: list = []
     # CA only: flag this message as blocking. The client must respond, and
     # optionally re-upload, before the stage can move on.
     as_query: bool = False
@@ -92,7 +94,10 @@ def post_stage_discussion(
         conv = discussion.for_return_item(db, user, item)
     else:
         conv = discussion.for_return_item(db, user, item)
-        discussion.post_message(db, user, conv, payload.body, payload.is_internal_note)
+        discussion.post_message(
+            db, user, conv, payload.body, payload.is_internal_note,
+            payload.document_version_ids,
+        )
         if is_client and not payload.is_internal_note:
             discussion.answer_open_queries(db, user, conv, payload.body)
 
@@ -137,7 +142,10 @@ def post_match_discussion(
         conv = discussion.for_match(db, user, match)
     else:
         conv = discussion.for_match(db, user, match)
-        discussion.post_message(db, user, conv, payload.body, payload.is_internal_note)
+        discussion.post_message(
+            db, user, conv, payload.body, payload.is_internal_note,
+            payload.document_version_ids,
+        )
         if is_client and not payload.is_internal_note:
             match.client_response = payload.body
             match.resolution_status = MismatchResolution.CLIENT_RESPONDED
@@ -194,6 +202,51 @@ def close_query(
     db.commit()
     conv = db.get(Conversation, q.conversation_id)
     return _payload(db, user, conv) if conv else query_out(q)
+
+
+# ---------------------------------------------------------- attachments
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/cases/{case_id}/attachments", status_code=201)
+async def upload_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """A file to hang off a message -- a screenshot of a supplier's invoice, a
+    bank advice, whatever makes the point. Stored and versioned like any other
+    document so it is downloadable, audited and never overwritten. Both sides
+    may attach; the message carries who sent it."""
+    from app.core.enums import DocumentType
+    from app.services import documents as docs_service
+    from app.services.permissions import get_case_or_403
+
+    case = get_case_or_403(db, user, case_id)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Attachments are limited to {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB",
+        )
+
+    document = docs_service.get_or_create_document(
+        db, case, DocumentType.MESSAGE_ATTACHMENT, user, title="Chat attachments"
+    )
+    version = docs_service.add_version(
+        db, user, document, file.filename, data, file.content_type or ""
+    )
+    db.commit()
+    return {
+        "document_version_id": version.id,
+        "filename": version.original_filename,
+        "size_bytes": version.size_bytes,
+        "content_type": version.content_type,
+        "download_url": f"/api/documents/versions/{version.id}/download",
+    }
 
 
 # --------------------------------------------------------------- inbox

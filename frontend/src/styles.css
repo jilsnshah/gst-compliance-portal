@@ -507,6 +507,29 @@ tr:last-child td {
   width: auto;
 }
 
+.attach-link {
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --------------------------------------------------------- login */
 .login-wrap {
   min-height: 100vh;

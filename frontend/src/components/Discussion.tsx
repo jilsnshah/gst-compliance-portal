@@ -1,19 +1,36 @@
 import { useCallback, useEffect, useState } from "react";
-import { get, isCA, post } from "../api";
+import { download, get, isCA, post, upload } from "../api";
 import { useAuth } from "../auth";
 import { dateTime } from "./ui";
 
 /* One discussion per stage (or per mismatched invoice). No thread list, no
    subjects, no separate query screen: a CA message can simply be flagged as
    blocking, and a client reply answers it. */
+interface Attachment {
+  document_version_id: number;
+  filename: string;
+  size_bytes: number;
+  content_type?: string;
+  download_url: string;
+}
+
+const isImage = (a: { content_type?: string; filename?: string }) =>
+  (a.content_type ?? "").startsWith("image/") ||
+  /\.(png|jpe?g|gif|webp|heic)$/i.test(a.filename ?? "");
+
+const readableSize = (n?: number) =>
+  !n ? "" : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+
 export default function Discussion({
   returnItemId,
   matchId,
+  caseId,
   compact,
   onChange,
 }: {
   returnItemId?: number;
   matchId?: number;
+  caseId: number;
   compact?: boolean;
   onChange?: () => void;
 }) {
@@ -29,6 +46,8 @@ export default function Discussion({
   const [needsReupload, setNeedsReupload] = useState(false);
   const [internal, setInternal] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pending, setPending] = useState<Attachment[]>([]);
   const [err, setErr] = useState("");
 
   const load = useCallback(() => {
@@ -39,19 +58,39 @@ export default function Discussion({
 
   useEffect(load, [load]);
 
+  async function attach(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setErr("");
+    try {
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await upload(`/api/cases/${caseId}/attachments`, form);
+        setPending((p) => [...p, res]);
+      }
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function send() {
-    if (!body.trim()) return;
+    if (!body.trim() && pending.length === 0) return;
     setBusy(true);
     setErr("");
     try {
       const next = await post(base, {
-        body,
+        body: body.trim() || (pending.length === 1 ? pending[0].filename : "Attached files"),
         is_internal_note: internal,
         as_query: ca && asQuery,
         requires_revision: needsReupload,
+        document_version_ids: pending.map((a) => a.document_version_id),
       });
       setData(next);
       setBody("");
+      setPending([]);
       setAsQuery(false);
       setNeedsReupload(false);
       setInternal(false);
@@ -122,6 +161,22 @@ export default function Discussion({
               {m.is_internal_note && " · internal note"}
             </div>
             <div style={{ whiteSpace: "pre-wrap" }}>{m.body}</div>
+            {(m.attachments ?? []).length > 0 && (
+              <div className="row" style={{ marginTop: 8, gap: 8 }}>
+                {m.attachments.map((a: Attachment) => (
+                  <button
+                    key={a.document_version_id}
+                    className="attachment"
+                    title={`${a.filename} · ${readableSize(a.size_bytes)}`}
+                    onClick={() => download(a.download_url, a.filename)}
+                  >
+                    <span>{isImage(a) ? "🖼" : "📎"}</span>
+                    <span className="attachment-name">{a.filename}</span>
+                    <span className="sub">{readableSize(a.size_bytes)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -133,8 +188,41 @@ export default function Discussion({
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
+        {pending.length > 0 && (
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            {pending.map((a) => (
+              <span key={a.document_version_id} className="attachment">
+                <span>{isImage(a) ? "🖼" : "📎"}</span>
+                <span className="attachment-name">{a.filename}</span>
+                <button
+                  className="ghost"
+                  style={{ padding: "0 4px" }}
+                  onClick={() =>
+                    setPending((p) =>
+                      p.filter((x) => x.document_version_id !== a.document_version_id),
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="row between" style={{ marginTop: 8 }}>
           <div className="row" style={{ gap: 14 }}>
+            <label className="sub check" style={{ cursor: "pointer" }}>
+              <input
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  attach(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <span className="attach-link">{uploading ? "Attaching…" : "📎 Attach"}</span>
+            </label>
             {ca && (
               <>
                 <label className="sub check">
@@ -165,7 +253,11 @@ export default function Discussion({
               </>
             )}
           </div>
-          <button className="primary" onClick={send} disabled={busy || !body.trim()}>
+          <button
+            className="primary"
+            onClick={send}
+            disabled={busy || uploading || (!body.trim() && pending.length === 0)}
+          >
             {asQuery ? "Send & request action" : "Send"}
           </button>
         </div>
