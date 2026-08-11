@@ -1,0 +1,18 @@
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8010:8010"
+    volumes:
+      # Everything that must survive a rebuild: the SQLite database and every
+      # uploaded document. Keep this directory backed up -- it is the system
+      # of record.
+      - ./data:/data
+    environment:
+      # Add the deployed frontend origin once it exists.
+      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      # Vercel preview deployments get a new subdomain each time.
+      CORS_ORIGIN_REGEX: "https://.*\\.vercel\\.app"
+      # Override for anything beyond a local demo.
+      SECRET_KEY: "dev-secret-not-for-production"
+    restart: unless-stopped

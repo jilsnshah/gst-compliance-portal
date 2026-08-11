@@ -1,4 +1,29 @@
-const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8010";
+/* Where the API lives. Baked in at build time from VITE_API_URL, but
+   overridable at runtime with ?api=https://... so a frontend already deployed
+   on Vercel can be pointed at a new tunnel URL without redeploying. */
+const API_KEY = "gst_api_url";
+
+function resolveBase(): string {
+  const fromQuery = new URLSearchParams(window.location.search).get("api");
+  if (fromQuery !== null) {
+    if (fromQuery) localStorage.setItem(API_KEY, fromQuery.replace(/\/$/, ""));
+    else localStorage.removeItem(API_KEY);
+  }
+  return (
+    localStorage.getItem(API_KEY) ??
+    import.meta.env.VITE_API_URL ??
+    "http://127.0.0.1:8010"
+  );
+}
+
+export const API_BASE = resolveBase();
+export function setApiBase(url: string) {
+  if (url) localStorage.setItem(API_KEY, url.replace(/\/$/, ""));
+  else localStorage.removeItem(API_KEY);
+  window.location.reload();
+}
+
+const BASE = API_BASE;
 // Sessions live in sessionStorage, not localStorage, so each browser tab holds
 // its own login. That is what lets you drive the CA portal in one tab and the
 // client portal in another without one signing the other out.

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { isCA } from "../api";
+import { API_BASE, isCA, setApiBase } from "../api";
 
 const TEST_ACCOUNTS = [
   { email: "admin@test.com", label: "CA Admin / Partner — sees every client" },
@@ -58,6 +58,22 @@ export default function Login() {
         <button className="primary" style={{ width: "100%" }} disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+
+        <details style={{ marginTop: 16 }}>
+          <summary>API: {API_BASE}</summary>
+          <div className="row" style={{ marginTop: 8 }}>
+            <input
+              defaultValue={API_BASE}
+              placeholder="https://your-tunnel.trycloudflare.com"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setApiBase((e.target as HTMLInputElement).value.trim());
+              }}
+            />
+          </div>
+          <div className="sub" style={{ marginTop: 6 }}>
+            Press Enter to point this frontend at a different backend. Saved in this browser.
+          </div>
+        </details>
 
         <div className="test-accounts">
           Dev-stage test accounts (password <code>test123</code>). Google sign-in arrives in Stage 2.

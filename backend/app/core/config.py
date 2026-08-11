@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -24,7 +25,16 @@ class Settings(BaseSettings):
     # auth provider: "local" now, "firebase" later
     auth_provider: str = "local"
 
-    cors_origins: list = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Comma-separated. Add the deployed frontend origin here, e.g.
+    # CORS_ORIGINS=http://localhost:5173,https://my-app.vercel.app
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Optional regex, handy for Vercel preview deployments:
+    # CORS_ORIGIN_REGEX=https://.*\.vercel\.app
+    cors_origin_regex: Optional[str] = None
+
+    @property
+    def cors_origin_list(self) -> list:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     class Config:
         env_file = ".env"

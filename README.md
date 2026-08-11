@@ -14,7 +14,17 @@ CA PORTAL   ───┘                    └─ Workflow engine · audit · m
 
 ## Run it
 
-Two terminals.
+Docker (keeps data in `./data`, survives rebuilds):
+
+```bash
+docker compose up -d --build     # API on http://localhost:8010
+cd frontend && npm run dev       # UI  on http://localhost:5173
+```
+
+See [DEPLOY.md](DEPLOY.md) for demoing to someone who is not sitting at your
+laptop — including why a Vercel frontend cannot reach a backend on localhost.
+
+Or run it directly, two terminals:
 
 ```bash
 # 1. backend  (http://127.0.0.1:8010, docs at /docs)
