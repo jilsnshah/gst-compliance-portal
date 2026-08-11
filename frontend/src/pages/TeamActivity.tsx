@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { get } from "../api";
+import { get, post } from "../api";
 import { Card, Pill, dateTime, humanise } from "../components/ui";
 
 /* Staff are not fenced off by client, so this page -- not access control -- is
@@ -12,16 +12,111 @@ const RETURN_LABEL: Record<string, string> = {
   GSTR3B: "GSTR-3B",
 };
 
+function AddEmployee({ reload }: { reload: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", designation: "" });
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Card
+      title="Add someone to the team"
+      actions={
+        <button onClick={() => { setOpen(!open); setCreated(null); setErr(""); }}>
+          {open ? "Cancel" : "Add employee"}
+        </button>
+      }
+    >
+      {created && (
+        <div className="banner blue">
+          <div>
+            <strong>Employee added</strong>
+            <div className="sub">
+              Pass these on — the password is not shown again.{" "}
+              <span className="mono">{created.email}</span> /{" "}
+              <span className="mono">{created.password}</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {!open && !created && (
+        <div className="sub">
+          Everyone in the firm sees every client. An account is how their work gets attributed.
+        </div>
+      )}
+      {open && (
+        <>
+          {err && <div className="error">{err}</div>}
+          <div className="row">
+            <input
+              placeholder="Full name"
+              value={form.full_name}
+              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+            />
+            <input
+              placeholder="Email (their login)"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            <input
+              placeholder="Password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+            <input
+              placeholder="Designation (optional)"
+              value={form.designation}
+              onChange={(e) => setForm({ ...form, designation: e.target.value })}
+            />
+            <button
+              className="primary"
+              disabled={busy || !form.full_name || !form.email || !form.password}
+              onClick={async () => {
+                setBusy(true);
+                setErr("");
+                try {
+                  await post("/api/users", {
+                    full_name: form.full_name,
+                    email: form.email,
+                    password: form.password,
+                    designation: form.designation || null,
+                    role: "CA_EMPLOYEE",
+                  });
+                  setCreated({ email: form.email, password: form.password });
+                  setForm({ full_name: "", email: "", password: "", designation: "" });
+                  setOpen(false);
+                  reload();
+                } catch (e: any) {
+                  setErr(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Create login
+            </button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function TeamActivity() {
   const [data, setData] = useState<any>(null);
   const [days, setDays] = useState(30);
+  const [q, setQ] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    get(`/api/dashboard/employees?days=${days}`)
-      .then(setData)
-      .catch((e) => setErr(e.message));
-  }, [days]);
+    const t = setTimeout(() => {
+      get(`/api/dashboard/employees?days=${days}${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`)
+        .then(setData)
+        .catch((e) => setErr(e.message));
+    }, q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [days, q]);
 
   if (err) return <div className="error">{err}</div>;
   if (!data) return <div className="empty">Loading…</div>;
@@ -35,15 +130,25 @@ export default function TeamActivity() {
             Everyone can see every client. This is how the firm knows who did what.
           </div>
         </div>
+        <div className="row">
+        <input
+          style={{ width: 220 }}
+          placeholder="Find someone…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
         <select style={{ width: 160 }} value={days} onChange={(e) => setDays(Number(e.target.value))}>
           <option value={7}>Last 7 days</option>
           <option value={30}>Last 30 days</option>
           <option value={90}>Last 90 days</option>
           <option value={3650}>All time</option>
         </select>
+        </div>
       </div>
 
-      <Card title="People">
+      <AddEmployee reload={() => setQ((v) => v)} />
+
+      <Card title={`People (${data.total ?? data.employees.length})`}>
         <table>
           <thead>
             <tr>

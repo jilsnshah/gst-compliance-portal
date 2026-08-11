@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -24,6 +24,7 @@ from app.models import (
     ClientUser,
     ComplianceCase,
     Employee,
+    ReturnItem,
     Entity,
     TaxPeriod,
     User,
@@ -108,6 +109,8 @@ def list_entities(
     q: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -142,13 +145,47 @@ def list_entities(
             sub = sub.where(TaxPeriod.month == month)
         stmt = stmt.where(Entity.id.in_(sub))
 
-    clients = {c.id: c.name for c in db.execute(select(Client)).scalars().all()}
-    out = []
-    for e in db.execute(stmt).scalars().all():
+    total = db.execute(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    ).scalar_one()
+
+    # With hundreds of files the page is search-first: without a search term
+    # this returns the most recently worked-on files rather than everything.
+    if not (q and q.strip()) and not client_id and not year and not month:
+        recent = (
+            select(ComplianceCase.entity_id, func.max(ReturnItem.updated_at).label("touched"))
+            .join(ReturnItem, ReturnItem.case_id == ComplianceCase.id)
+            .group_by(ComplianceCase.entity_id)
+            .subquery()
+        )
+        stmt = (
+            select(Entity)
+            .join(Client, Client.id == Entity.client_id)
+            .outerjoin(recent, recent.c.entity_id == Entity.id)
+        )
+        if ids is not None:
+            stmt = stmt.where(Entity.client_id.in_(ids or [-1]))
+        stmt = stmt.order_by(recent.c.touched.desc().nullslast(), Entity.legal_name)
+
+    rows = db.execute(stmt.limit(limit).offset(offset)).scalars().all()
+    clients = {
+        c.id: c.name
+        for c in db.execute(
+            select(Client).where(Client.id.in_([e.client_id for e in rows] or [-1]))
+        ).scalars().all()
+    }
+    items = []
+    for e in rows:
         row = entity_out(e)
         row["client_name"] = clients.get(e.client_id)
-        out.append(row)
-    return out
+        items.append(row)
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "searched": bool(q and q.strip()) or bool(client_id or year or month),
+    }
 
 
 @router.get("/entities/{entity_id}")
@@ -260,7 +297,9 @@ def list_users(
 def create_user(
     payload: UserCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    require_admin(user)
+    # CA staff have the same access as admins, so adding a colleague is
+    # ordinary work rather than an administrative privilege.
+    require_ca(user)
     if db.execute(select(User).where(User.email == payload.email.lower())).scalars().first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 

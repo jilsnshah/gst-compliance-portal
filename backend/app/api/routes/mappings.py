@@ -79,8 +79,13 @@ def preview_version(
     data = get_storage().read(version.storage_key)
     try:
         out = parser.preview_workbook(data)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not read workbook: {exc}")
+    except parser.UnreadableFile as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    except Exception:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "This file could not be read as a spreadsheet. Upload .xlsx or CSV.",
+        )
 
     saved = db.execute(
         select(ColumnMapping).where(

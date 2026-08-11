@@ -123,7 +123,7 @@ export default function ColumnMapper({
   if (!open) {
     return (
       <button className="ghost" style={{ paddingLeft: 0 }} onClick={() => setOpen(true)}>
-        Set which column is which →
+        Match this file's columns →
       </button>
     );
   }
@@ -134,14 +134,14 @@ export default function ColumnMapper({
   return (
     <div className="upload-box" style={{ marginTop: 12 }}>
       <div className="row between">
-        <h3 style={{ margin: 0 }}>Columns in {filename}</h3>
+        <h3 style={{ margin: 0 }}>Match {filename} to the GSTR-2B fields</h3>
         <button className="ghost" onClick={() => setOpen(false)}>
           Close
         </button>
       </div>
 
       {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
-      {!data && <div className="empty">Reading the file…</div>}
+      {!data && !err && <div className="empty">Reading the file…</div>}
 
       {data && sheet && (
         <>

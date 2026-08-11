@@ -16,6 +16,9 @@ export default function Clients() {
   const [clients, setClients] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [searched, setSearched] = useState(false);
   const [year, setYear] = useState("");
   const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
@@ -28,8 +31,12 @@ export default function Clients() {
     if (year) params.set("year", year);
     if (month) params.set("month", month);
     const qs = params.toString();
-    get(`/api/entities${qs ? `?${qs}` : ""}`)
-      .then(setEntities)
+    get(`/api/entities?${qs}${qs ? "&" : ""}limit=50&offset=${offset}`)
+      .then((r) => {
+        setEntities(r.items ?? []);
+        setTotal(r.total ?? 0);
+        setSearched(r.searched ?? false);
+      })
       .catch((e) => setErr(e.message));
   };
 
@@ -37,7 +44,10 @@ export default function Clients() {
   useEffect(() => {
     const t = setTimeout(load, q ? 250 : 0);
     return () => clearTimeout(t);
-  }, [q, year, month]);
+  }, [q, year, month, offset]);
+
+  // A new search always starts from the first page.
+  useEffect(() => setOffset(0), [q, year, month]);
 
   return (
     <>
@@ -88,8 +98,15 @@ export default function Clients() {
           )}
         </div>
         <div className="sub" style={{ marginTop: 8 }}>
-          {entities.length} file{entities.length === 1 ? "" : "s"}
-          {(year || month) && " with a month matching that filter"}
+          {searched ? (
+            <>
+              {total} file{total === 1 ? "" : "s"} match
+              {(year || month) && " that filter"}
+              {total > entities.length && ` — showing ${offset + 1}–${offset + entities.length}`}
+            </>
+          ) : (
+            <>Most recently worked on. Search to find any of the {total} files.</>
+          )}
         </div>
       </Card>
 
@@ -133,12 +150,28 @@ export default function Clients() {
             {entities.length === 0 && (
               <tr>
                 <td colSpan={7} className="empty">
-                  Nothing matches that search.
+                  {searched ? "Nothing matches that search." : "No files yet."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {total > entities.length && (
+          <div className="row between" style={{ marginTop: 12 }}>
+            <button disabled={offset === 0} onClick={() => setOffset(Math.max(offset - 50, 0))}>
+              ← Previous
+            </button>
+            <span className="sub">
+              {offset + 1}–{offset + entities.length} of {total}
+            </span>
+            <button
+              disabled={offset + entities.length >= total}
+              onClick={() => setOffset(offset + 50)}
+            >
+              Next →
+            </button>
+          </div>
+        )}
       </Card>
 
       <NewClientForms reload={load} clients={clients} />

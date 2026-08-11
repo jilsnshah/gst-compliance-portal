@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -301,6 +301,9 @@ def employee_activity(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     days: int = 30,
+    q: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
 ):
     """Who in the firm is doing what.
 
@@ -309,24 +312,32 @@ def employee_activity(
     require_ca(user)
     since = datetime.utcnow() - timedelta(days=days)
 
+    base = select(Employee).join(User, User.id == Employee.user_id)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        base = base.where(or_(User.full_name.ilike(like), User.email.ilike(like)))
+    total = db.execute(select(func.count()).select_from(base.order_by(None).subquery())).scalar_one()
+    # Hundreds of staff, so counts and in-hand work are computed for the page
+    # being shown, not for everyone.
     staff = db.execute(
-        select(Employee).join(User, User.id == Employee.user_id).order_by(User.full_name)
+        base.order_by(User.full_name).limit(limit).offset(offset)
     ).scalars().all()
+    page_user_ids = [e.user_id for e in staff] or [-1]
 
     # Everything each person did in the window, grouped by action.
     counts = {}
     for actor_id, action, n in db.execute(
         select(AuditLog.actor_user_id, AuditLog.action, func.count(AuditLog.id))
-        .where(AuditLog.created_at >= since)
+        .where(AuditLog.created_at >= since, AuditLog.actor_user_id.in_(page_user_ids))
         .group_by(AuditLog.actor_user_id, AuditLog.action)
     ).all():
         counts.setdefault(actor_id, {})[action] = n
 
     last_seen = dict(
         db.execute(
-            select(AuditLog.actor_user_id, func.max(AuditLog.created_at)).group_by(
-                AuditLog.actor_user_id
-            )
+            select(AuditLog.actor_user_id, func.max(AuditLog.created_at))
+            .where(AuditLog.actor_user_id.in_(page_user_ids))
+            .group_by(AuditLog.actor_user_id)
         ).all()
     )
 
@@ -338,7 +349,7 @@ def employee_activity(
         .join(ComplianceCase, ComplianceCase.id == ReturnItem.case_id)
         .join(Entity, Entity.id == ComplianceCase.entity_id)
         .join(TaxPeriod, TaxPeriod.id == ComplianceCase.tax_period_id)
-        .where(ReturnItem.review_started_by_user_id.isnot(None))
+        .where(ReturnItem.review_started_by_user_id.in_(page_user_ids))
         .where(ReturnItem.status.notin_([ReturnStatus.FILED]))
     ).all()
     for item, case, entity, period in rows:
@@ -380,13 +391,16 @@ def employee_activity(
 
     recent = db.execute(
         select(AuditLog)
-        .where(AuditLog.actor_user_id.in_([e.user_id for e in staff] or [-1]))
+        .where(AuditLog.actor_user_id.in_(page_user_ids))
         .order_by(AuditLog.created_at.desc())
         .limit(60)
     ).scalars().all()
 
     return {
         "days": days,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
         "employees": out,
         "recent": [audit_out(a) for a in recent],
     }

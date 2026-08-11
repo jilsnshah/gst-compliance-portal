@@ -161,18 +161,102 @@ def header_fingerprint(row) -> str:
     return hashlib.sha256(joined.encode()).hexdigest()[:32]
 
 
+class UnreadableFile(Exception):
+    """The upload is not a workbook we can read. Carries a message aimed at
+    whoever has to fix it, not a zipfile stack trace."""
+
+
+def sniff_format(data: bytes, filename: str = "") -> str:
+    name = (filename or "").lower()
+    if data[:5] == b"%PDF-":
+        return "pdf"
+    if data[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return "xls"
+    if data[:4] == b"PK\x03\x04":
+        # Every modern office format is a zip. Look inside to tell them apart.
+        try:
+            import zipfile
+
+            names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+        except Exception:
+            return "zip"
+        if any(n.startswith("xl/") for n in names):
+            return "xlsx"
+        if any(n.startswith("Index/") or n.endswith(".iwa") for n in names):
+            return "numbers"
+        if "mimetype" in names:
+            return "ods"
+        return "zip"
+    if name.endswith(".csv") or _looks_like_csv(data):
+        return "csv"
+    return "unknown"
+
+
+def _looks_like_csv(data: bytes) -> bool:
+    head = data[:2048]
+    if b"\x00" in head:
+        return False
+    try:
+        text = head.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return False
+    lines = [ln for ln in text.splitlines() if ln.strip()][:5]
+    return len(lines) >= 2 and all(("," in ln or "\t" in ln) for ln in lines)
+
+
+UNREADABLE = {
+    "numbers": "This is an Apple Numbers file. In Numbers choose File \u2192 Export To "
+               "\u2192 Excel, and upload the .xlsx.",
+    "xls": "This is an old .xls workbook. Open it and use Save As \u2192 .xlsx, "
+           "or export it as CSV.",
+    "ods": "This is an OpenDocument spreadsheet. Save it as .xlsx or CSV.",
+    "pdf": "This is a PDF, not a spreadsheet. Invoice data has to come as a "
+           "workbook or CSV so it can be read line by line.",
+    "zip": "This is a zip archive, not a spreadsheet.",
+    "unknown": "This file is not a spreadsheet we can read. Upload .xlsx or CSV.",
+}
+
+
+def _csv_rows(data: bytes) -> list:
+    import csv as _csv
+
+    text = data.decode("utf-8-sig", errors="replace")
+    sample = text[:4096]
+    try:
+        dialect = _csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except Exception:
+        dialect = _csv.excel
+    return [list(r) for r in _csv.reader(io.StringIO(text), dialect)]
+
+
+def _load_rows(data: bytes, filename: str = "", sheet_name: Optional[str] = None):
+    """Returns (sheet_names, rows). One code path for xlsx and CSV so the
+    mapping UI behaves the same either way."""
+    kind = sniff_format(data, filename)
+    if kind == "csv":
+        return ["CSV"], _csv_rows(data)
+    if kind != "xlsx":
+        raise UnreadableFile(UNREADABLE.get(kind, UNREADABLE["unknown"]))
+    workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+    names = workbook.sheetnames
+    target = sheet_name if sheet_name in names else names[0]
+    rows = [list(r) for r in workbook[target].iter_rows(values_only=True)]
+    workbook.close()
+    return names, rows
+
+
 def preview_workbook(data: bytes, max_rows: int = 15) -> dict:
     """Every sheet's first rows, verbatim, addressed by column letter.
 
     Deliberately makes no attempt to find a header or identify fields: the
     point is to show the CA exactly what is in the file so they can say which
     column is which."""
-    workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+    names, _ = _load_rows(data)
     sheets = []
-    for name in workbook.sheetnames:
-        sheet = workbook[name]
+    for name in names:
+        _, raw = _load_rows(data, sheet_name=name)
         rows = []
-        for i, row in enumerate(sheet.iter_rows(values_only=True)):
+        for i, row in enumerate(raw):
             if i >= max_rows:
                 break
             rows.append(
@@ -191,7 +275,6 @@ def preview_workbook(data: bytes, max_rows: int = 15) -> dict:
                 "suggested_header_row": _guess_header_row(rows),
             }
         )
-    workbook.close()
     return {"sheets": sheets, "fields": MAPPABLE_FIELDS, "required": REQUIRED_FIELDS}
 
 
@@ -211,20 +294,23 @@ def parse_with_mapping(data: bytes, mapping: dict) -> dict:
     mapping = {sheet_name, header_row (1-based or None), first_data_row
     (1-based), columns: {field: 0-based index}}
     """
-    workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-    name = mapping.get("sheet_name") or workbook.sheetnames[0]
-    if name not in workbook.sheetnames:
-        workbook.close()
+    try:
+        names, rows = _load_rows(data, sheet_name=mapping.get("sheet_name"))
+    except UnreadableFile as exc:
+        return {
+            "records": [], "errors": [str(exc)], "warnings": [],
+            "header_row": None, "mapped_columns": {}, "unmapped_headers": [],
+        }
+    name = mapping.get("sheet_name") or names[0]
+    if name not in names:
         return {
             "records": [],
             "errors": [f"Sheet '{name}' is not in this file"],
+            "warnings": [],
             "header_row": None,
             "mapped_columns": {},
             "unmapped_headers": [],
         }
-    sheet = workbook[name]
-    rows = [list(r) for r in sheet.iter_rows(values_only=True)]
-    workbook.close()
 
     columns = {f: int(i) for f, i in (mapping.get("columns") or {}).items() if i is not None}
     missing = [f for f in REQUIRED_FIELDS if f not in columns]

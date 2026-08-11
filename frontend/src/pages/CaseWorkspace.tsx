@@ -703,13 +703,10 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
                   v{status.gstr2b_version.version_no} · {status.gstr2b_version.filename} ·{" "}
                   {status.gstr2b_version.rows} rows read
                 </div>
-                {ca && (
-                  <ColumnMapper
-                    versionId={status.gstr2b_version.id}
-                    filename={status.gstr2b_version.filename}
-                    onDone={load}
-                  />
-                )}
+                <div className="sub">
+                  Read automatically — GSTR-2B always comes out of the GST portal in the same
+                  layout, so there is nothing to map.
+                </div>
               </>
             ) : (
               <div className="sub">Not uploaded yet.</div>
