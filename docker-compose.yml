@@ -16,3 +16,13 @@ services:
       # Override for anything beyond a local demo.
       SECRET_KEY: "dev-secret-not-for-production"
     restart: unless-stopped
+
+  # Gives the laptop a public HTTPS address so a hosted frontend can reach it.
+  # Quick tunnels need no Cloudflare account, but the URL changes every restart
+  # -- read it with:  docker compose logs tunnel | grep trycloudflare
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:8010
+    depends_on:
+      - api
+    restart: unless-stopped
