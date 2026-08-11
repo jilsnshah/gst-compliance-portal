@@ -10,6 +10,7 @@ export default function Clients() {
   const [entities, setEntities] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [logins, setLogins] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -17,6 +18,7 @@ export default function Clients() {
     get("/api/clients").then(setClients);
     get("/api/entities").then(setEntities);
     get("/api/employees").then(setEmployees).catch(() => {});
+    get("/api/users").then(setLogins).catch(() => {});
   };
   useEffect(load, []);
 
@@ -51,6 +53,13 @@ export default function Clients() {
           <div className="sub" style={{ marginBottom: 10 }}>
             {client.primary_email} · {client.primary_phone ?? "no phone"}
           </div>
+
+          <ClientLogins
+            client={client}
+            logins={logins.filter((u) => u.client_ids.includes(client.id))}
+            isAdmin={user?.role === "CA_ADMIN"}
+            reload={load}
+          />
           {entities
             .filter((e) => e.client_id === client.id)
             .map((entity) => (
@@ -100,6 +109,110 @@ export default function Clients() {
 
       {user?.role === "CA_ADMIN" && <NewClientForms reload={load} clients={clients} entities={entities} />}
     </>
+  );
+}
+
+function ClientLogins({
+  client,
+  logins,
+  isAdmin,
+  reload,
+}: {
+  client: any;
+  logins: any[];
+  isAdmin: boolean;
+  reload: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ full_name: "", email: "", password: "" });
+  const [err, setErr] = useState("");
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+
+  return (
+    <div className="upload-box" style={{ marginBottom: 12 }}>
+      <div className="row between">
+        <div>
+          <h3 style={{ marginBottom: 4 }}>Portal access</h3>
+          {logins.length === 0 ? (
+            <span style={{ color: "var(--amber)" }}>
+              Nobody can sign in for this client yet.
+            </span>
+          ) : (
+            <span className="sub">
+              {logins.map((u) => `${u.full_name} (${u.email})`).join(" · ")}
+            </span>
+          )}
+        </div>
+        {isAdmin && (
+          <button onClick={() => { setOpen(!open); setCreated(null); }}>
+            {open ? "Cancel" : "Add a login"}
+          </button>
+        )}
+      </div>
+
+      {created && (
+        <div className="banner blue" style={{ marginTop: 10 }}>
+          <div>
+            <strong>Login created</strong>
+            <div className="sub">
+              Send these to the client — the password is not shown again.
+              <br />
+              <span className="mono">{created.email}</span> · password{" "}
+              <span className="mono">{created.password}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {err && <div className="error">{err}</div>}
+          <div className="row">
+            <input
+              placeholder="Full name"
+              value={form.full_name}
+              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+            />
+            <input
+              placeholder="Email (their login)"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            <input
+              placeholder="Temporary password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+            <button
+              className="primary"
+              disabled={!form.full_name || !form.email || !form.password}
+              onClick={async () => {
+                setErr("");
+                try {
+                  await post("/api/users", {
+                    ...form,
+                    role: "CLIENT",
+                    client_id: client.id,
+                  });
+                  setCreated({ email: form.email, password: form.password });
+                  setForm({ full_name: "", email: "", password: "" });
+                  setOpen(false);
+                  reload();
+                } catch (e: any) {
+                  setErr(e.message);
+                }
+              }}
+            >
+              Create login
+            </button>
+          </div>
+          <div className="sub" style={{ marginTop: 6 }}>
+            They sign in with this email and password. There is no invitation email yet, so pass the
+            details on yourself.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

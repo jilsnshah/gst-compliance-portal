@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -156,6 +158,28 @@ def create_gstin(
 def list_employees(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_ca(user)
     return [employee_out(e) for e in db.execute(select(Employee)).scalars().all()]
+
+
+@router.get("/users")
+def list_users(
+    client_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Client logins, so an admin can see who is actually able to sign in."""
+    require_ca(user)
+    stmt = (
+        select(User)
+        .join(ClientUser, ClientUser.user_id == User.id)
+        .order_by(User.full_name)
+    )
+    ids = visible_client_ids(db, user)
+    if ids is not None:
+        stmt = stmt.where(ClientUser.client_id.in_(ids or [-1]))
+    if client_id:
+        assert_client_access(db, user, client_id)
+        stmt = stmt.where(ClientUser.client_id == client_id)
+    return [user_out(u) for u in db.execute(stmt).unique().scalars().all()]
 
 
 @router.post("/users", status_code=201)
