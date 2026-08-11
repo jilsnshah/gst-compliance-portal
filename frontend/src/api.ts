@@ -65,10 +65,35 @@ export interface ReturnItem {
   internal_status?: string;
 }
 
+export interface Client {
+  id: number;
+  name: string;
+  /** The login email, read from the linked user -- the only place it is stored. */
+  email: string | null;
+  phone: string | null;
+  login_user_id: number | null;
+  is_active: boolean;
+  entity_count: number;
+}
+
+/** A file is one GST registration: the GSTIN lives here, not a layer below. */
+export interface Entity {
+  id: number;
+  client_id: number;
+  file_number: string;
+  legal_name: string;
+  trade_name: string | null;
+  pan: string;
+  gstin: string;
+  state_name: string | null;
+  filing_frequency: string;
+  assigned_employee_id: number | null;
+}
+
 export interface CaseSummary {
   id: number;
   status: string;
-  client: { id: number; name: string; code: string };
+  client: { id: number; name: string };
   entity: { id: number; legal_name: string; trade_name: string | null; file_number: string };
   gstin: string;
   period: { id: number; code: string; label: string; gstr1_due_date: string | null; gstr3b_due_date: string | null };
