@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { download, get, isCA, patch, post, upload } from "../api";
 import type { CaseSummary, ReturnItem } from "../api";
 import { useAuth } from "../auth";
+import ColumnMapper from "../components/ColumnMapper";
 import Discussion from "../components/Discussion";
 import { Bar, Card, Pill, dateTime, humanise, money, shortDate } from "../components/ui";
 
@@ -418,6 +419,23 @@ function UploadBox({
   );
 }
 
+function LatestMapper({
+  documents,
+  docType,
+  reload,
+}: {
+  documents: any[];
+  docType: string;
+  reload: () => void;
+}) {
+  const doc = documents.find((d: any) => d.doc_type === docType);
+  const latest = doc?.versions?.length ? doc.versions[doc.versions.length - 1] : null;
+  if (!latest) return null;
+  return (
+    <ColumnMapper versionId={latest.id} filename={latest.original_filename} onDone={reload} />
+  );
+}
+
 function VersionList({ documents, docTypes }: { documents: any[]; docTypes: string[] }) {
   const docs = documents.filter((d) => docTypes.includes(d.doc_type));
   if (docs.length === 0) return <div className="empty">No files uploaded yet.</div>;
@@ -614,6 +632,7 @@ function ReturnTrack({
 
       <Card title="Client's data">
         <VersionList documents={caseData.documents} docTypes={[docType]} />
+        {ca && <LatestMapper documents={caseData.documents} docType={docType} reload={reload} />}
         {!item.is_terminal && (
           <div style={{ marginTop: 12 }}>
             <UploadBox caseId={caseData.id} docType={docType} returnItemId={item.id} reload={reload} allowOnBehalf />
@@ -679,9 +698,19 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
           <div>
             <h3>GSTR-2B (uploaded by CA team)</h3>
             {status?.gstr2b_version ? (
-              <div className="sub">
-                v{status.gstr2b_version.version_no} · {status.gstr2b_version.filename} · {status.gstr2b_version.rows} rows
-              </div>
+              <>
+                <div className="sub">
+                  v{status.gstr2b_version.version_no} · {status.gstr2b_version.filename} ·{" "}
+                  {status.gstr2b_version.rows} rows read
+                </div>
+                {ca && (
+                  <ColumnMapper
+                    versionId={status.gstr2b_version.id}
+                    filename={status.gstr2b_version.filename}
+                    onDone={load}
+                  />
+                )}
+              </>
             ) : (
               <div className="sub">Not uploaded yet.</div>
             )}
@@ -694,10 +723,20 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
           <div>
             <h3>Purchase Register (client)</h3>
             {status?.purchase_register_version ? (
-              <div className="sub">
-                v{status.purchase_register_version.version_no} · {status.purchase_register_version.filename} ·{" "}
-                {status.purchase_register_version.rows} rows
-              </div>
+              <>
+                <div className="sub">
+                  v{status.purchase_register_version.version_no} ·{" "}
+                  {status.purchase_register_version.filename} ·{" "}
+                  {status.purchase_register_version.rows} rows read
+                </div>
+                {ca && (
+                  <ColumnMapper
+                    versionId={status.purchase_register_version.id}
+                    filename={status.purchase_register_version.filename}
+                    onDone={load}
+                  />
+                )}
+              </>
             ) : (
               <div className="sub">Not uploaded yet.</div>
             )}
@@ -889,6 +928,7 @@ function Gstr3b({ item, caseData, reload }: { item: ReturnItem; caseData: any; r
 
       <Card title="Client's GSTR-3B data">
         <VersionList documents={caseData.documents} docTypes={["GSTR3B_DATA"]} />
+        {ca && <LatestMapper documents={caseData.documents} docType="GSTR3B_DATA" reload={reload} />}
         {!item.is_terminal && (
           <div style={{ marginTop: 12 }}>
             <UploadBox

@@ -8,6 +8,8 @@ import CaDashboard from "./pages/CaDashboard";
 import CaseWorkspace from "./pages/CaseWorkspace";
 import ComplianceGrid from "./pages/ComplianceGrid";
 import Clients from "./pages/Clients";
+import FileProfile from "./pages/FileProfile";
+import TeamActivity from "./pages/TeamActivity";
 import AuditTrail from "./pages/AuditTrail";
 import Inbox from "./pages/Messages";
 import ClientMonth from "./pages/ClientMonth";
@@ -45,6 +47,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                 Needs attention
                 {unread > 0 && <span className="badge-count">{unread}</span>}
               </NavLink>
+              <NavLink to="/ca/team">Team activity</NavLink>
               <NavLink to="/ca/audit">Audit trail</NavLink>
             </>
           ) : (
@@ -90,6 +93,8 @@ export default function App() {
       <Route path="/ca" element={<Shell><CaDashboard /></Shell>} />
       <Route path="/ca/grid" element={<Shell><ComplianceGrid /></Shell>} />
       <Route path="/ca/clients" element={<Shell><Clients /></Shell>} />
+      <Route path="/ca/files/:entityId" element={<Shell><FileProfile /></Shell>} />
+      <Route path="/ca/team" element={<Shell><TeamActivity /></Shell>} />
       <Route path="/ca/audit" element={<Shell><AuditTrail /></Shell>} />
       <Route path="/messages" element={<Shell><Inbox /></Shell>} />
       {/* Same URL, two experiences: the client gets the stepper, the CA the workspace. */}

@@ -3,11 +3,18 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.api.serializers import client_out, employee_out, entity_out, user_out
+from app.api.serializers import (
+    case_out,
+    client_out,
+    employee_out,
+    entity_out,
+    period_out,
+    user_out,
+)
 from app.core.db import get_db
 from app.core.enums import AuditAction, Role
 from app.core.security import hash_password
@@ -15,14 +22,17 @@ from app.models import (
     Client,
     ClientAssignment,
     ClientUser,
+    ComplianceCase,
     Employee,
     Entity,
+    TaxPeriod,
     User,
 )
 from app.schemas.requests import AssignmentCreate, ClientCreate, EntityCreate, UserCreate
 from app.services import audit
 from app.services.permissions import (
     assert_client_access,
+    get_entity_or_403,
     require_admin,
     require_ca,
     visible_client_ids,
@@ -47,7 +57,7 @@ def create_client(
 ):
     """Creates the client and the one login they sign in with, together --
     a client without a login could never reach their own portal."""
-    require_admin(user)
+    require_ca(user)
     email = payload.email.lower()
     if db.execute(select(User).where(User.email == email)).scalars().first():
         raise HTTPException(status.HTTP_409_CONFLICT, "That email already has a login")
@@ -94,16 +104,101 @@ def get_client(
 # --------------------------------------------------------------- entities
 @router.get("/entities")
 def list_entities(
-    client_id: int = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    client_id: Optional[int] = None,
+    q: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    stmt = select(Entity).order_by(Entity.legal_name)
+    """Files, searchable the way a CA actually looks one up: by client name,
+    file number, GSTIN, PAN or trade name -- one box, not five."""
+    stmt = select(Entity).join(Client, Client.id == Entity.client_id).order_by(Entity.legal_name)
     ids = visible_client_ids(db, user)
     if ids is not None:
         stmt = stmt.where(Entity.client_id.in_(ids or [-1]))
     if client_id:
         assert_client_access(db, user, client_id)
         stmt = stmt.where(Entity.client_id == client_id)
-    return [entity_out(e) for e in db.execute(stmt).scalars().all()]
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Client.name.ilike(like),
+                Entity.legal_name.ilike(like),
+                Entity.trade_name.ilike(like),
+                Entity.file_number.ilike(like),
+                Entity.gstin.ilike(like),
+                Entity.pan.ilike(like),
+            )
+        )
+    if year or month:
+        sub = select(ComplianceCase.entity_id).join(
+            TaxPeriod, TaxPeriod.id == ComplianceCase.tax_period_id
+        )
+        if year:
+            sub = sub.where(TaxPeriod.year == year)
+        if month:
+            sub = sub.where(TaxPeriod.month == month)
+        stmt = stmt.where(Entity.id.in_(sub))
+
+    clients = {c.id: c.name for c in db.execute(select(Client)).scalars().all()}
+    out = []
+    for e in db.execute(stmt).scalars().all():
+        row = entity_out(e)
+        row["client_name"] = clients.get(e.client_id)
+        out.append(row)
+    return out
+
+
+@router.get("/entities/{entity_id}")
+def get_entity(
+    entity_id: int,
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """A file and its whole year, so the CA can pick a month from an overview
+    rather than having to know which month they want up front."""
+    entity = get_entity_or_403(db, user, entity_id)
+    client = db.get(Client, entity.client_id)
+
+    stmt = (
+        select(ComplianceCase, TaxPeriod)
+        .join(TaxPeriod, TaxPeriod.id == ComplianceCase.tax_period_id)
+        .where(ComplianceCase.entity_id == entity.id)
+        .order_by(TaxPeriod.year.desc(), TaxPeriod.month.desc())
+    )
+    if year:
+        stmt = stmt.where(TaxPeriod.year == year)
+
+    months, years = [], set()
+    for case, period in db.execute(stmt).all():
+        years.add(period.year)
+        summary = case_out(db, case, user)
+        returns = summary["returns"]
+        months.append({
+            "case_id": case.id,
+            "period": period_out(period),
+            "status": summary["status"],
+            "returns": [
+                {
+                    "return_type": r["return_type"],
+                    "return_label": r["return_label"],
+                    "status": r["status"],
+                    "progress": r["progress"],
+                    "waiting_on": r["waiting_on"],
+                }
+                for r in returns
+            ],
+            "progress": int(sum(r["progress"] for r in returns) / len(returns)) if returns else 0,
+        })
+
+    out = entity_out(entity)
+    out["client_name"] = client.name if client else None
+    out["months"] = months
+    out["years"] = sorted(years, reverse=True)
+    return out
 
 
 @router.post("/entities", status_code=201)

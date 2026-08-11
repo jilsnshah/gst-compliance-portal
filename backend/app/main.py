@@ -14,6 +14,7 @@ from app.api.routes import (
     discussion,
     documents,
     gstr3b,
+    mappings,
     masters,
     queries,
     recon,
@@ -31,7 +32,8 @@ app.add_middleware(
 )
 
 for module in (
-    auth, masters, cases, documents, queries, discussion, conversations, recon, gstr3b, dashboard
+    auth, masters, cases, documents, mappings, queries, discussion, conversations, recon,
+    gstr3b, dashboard
 ):
     app.include_router(module.router)
 

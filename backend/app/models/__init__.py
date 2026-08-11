@@ -15,11 +15,13 @@ from app.models.compliance import (
 from app.models.document import Document, DocumentVersion
 from app.models.gstr3b import Filing, GSTR3BPayment
 from app.models.identity import ClientUser, Employee, User
+from app.models.mapping import ColumnMapping
 from app.models.recon import InvoiceMatch, InvoiceRecord, ReconciliationRun
 
 __all__ = [
     "AuditLog",
     "Client",
+    "ColumnMapping",
     "ClientAssignment",
     "ClientUser",
     "ComplianceCase",

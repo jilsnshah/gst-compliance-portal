@@ -1,36 +1,43 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, post } from "../api";
-import { useAuth } from "../auth";
-import { Card, humanise } from "../components/ui";
+import { Card } from "../components/ui";
 
+/* The firm's main working screen: find a file, then open it.
+
+   A CA looks a file up by whatever they happen to have in front of them -- a
+   client's name, a file number, a GSTIN, a PAN -- so it is one search box over
+   all of them rather than a field each. Picking a month is a step later, on the
+   file's own page, because you rarely know which month you want until you have
+   seen the year. */
 export default function Clients() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [entities, setEntities] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [q, setQ] = useState("");
+  const [year, setYear] = useState("");
+  const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
 
   const load = () => {
-    get("/api/clients").then(setClients);
-    get("/api/entities").then(setEntities);
+    get("/api/clients").then(setClients).catch(() => {});
     get("/api/employees").then(setEmployees).catch(() => {});
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    if (year) params.set("year", year);
+    if (month) params.set("month", month);
+    const qs = params.toString();
+    get(`/api/entities${qs ? `?${qs}` : ""}`)
+      .then(setEntities)
+      .catch((e) => setErr(e.message));
   };
-  useEffect(load, []);
 
-  async function openMonth(entityId: number, year: number, month: number) {
-    setErr("");
-    setMsg("");
-    try {
-      const c = await post("/api/cases", { entity_id: entityId, year, month });
-      setMsg(`${c.period.label} opened for ${c.gstin}`);
-      navigate(`/cases/${c.id}`);
-    } catch (e: any) {
-      setErr(e.message);
-    }
-  }
+  // Debounced so typing does not fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(load, q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [q, year, month]);
 
   return (
     <>
@@ -38,64 +45,104 @@ export default function Clients() {
         <div>
           <h1>Clients &amp; files</h1>
           <div className="sub">
-            A client owns files (entities); each file owns one or more GSTINs. Compliance months hang off the GSTIN.
+            One file is one GST registration. Open a file to see its whole year.
           </div>
         </div>
       </div>
 
       {err && <div className="error">{err}</div>}
-      {msg && <div className="card sub">{msg}</div>}
 
-      {clients.map((client) => (
-        <Card key={client.id} title={client.name}>
-          <div className="sub" style={{ marginBottom: 12 }}>
-            Signs in as <span className="mono">{client.email ?? "— no login —"}</span>
-            {client.phone && ` · ${client.phone}`}
-          </div>
-          {entities
-            .filter((e) => e.client_id === client.id)
-            .map((entity) => (
-              <div key={entity.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
-                <div className="row between">
-                  <div>
-                    <strong>{entity.legal_name}</strong>
-                    {entity.trade_name && <span className="sub"> · trading as {entity.trade_name}</span>}
-                    <div className="mono" style={{ marginTop: 2 }}>{entity.gstin}</div>
-                    <div className="sub">
-                      File {entity.file_number} · PAN <span className="mono">{entity.pan}</span> ·{" "}
-                      {humanise(entity.constitution)} · {entity.state_name ?? entity.state ?? "—"} ·{" "}
-                      {humanise(entity.filing_frequency)} ·{" "}
-                      {employees.find((e) => e.id === entity.assigned_employee_id)?.full_name ?? "unassigned"}
-                    </div>
-                  </div>
-                  <OpenMonth onOpen={(y, m) => openMonth(entity.id, y, m)} />
-                </div>
-              </div>
+      <Card>
+        <div className="row">
+          <input
+            style={{ flex: 2, minWidth: 260 }}
+            placeholder="Search client, file number, GSTIN, PAN or trade name…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <input
+            style={{ width: 110 }}
+            placeholder="Year"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+          />
+          <select style={{ width: 150 }} value={month} onChange={(e) => setMonth(e.target.value)}>
+            <option value="">Any month</option>
+            {Array.from({ length: 12 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {new Date(2000, i, 1).toLocaleString("en", { month: "long" })}
+              </option>
             ))}
-        </Card>
-      ))}
+          </select>
+          {(q || year || month) && (
+            <button
+              className="ghost"
+              onClick={() => {
+                setQ("");
+                setYear("");
+                setMonth("");
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="sub" style={{ marginTop: 8 }}>
+          {entities.length} file{entities.length === 1 ? "" : "s"}
+          {(year || month) && " with a month matching that filter"}
+        </div>
+      </Card>
 
-      {user?.role === "CA_ADMIN" && <NewClientForms reload={load} clients={clients} />}
+      <Card>
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>GSTIN</th>
+              <th>PAN</th>
+              <th>Client</th>
+              <th>State</th>
+              <th>Handler</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {entities.map((e) => (
+              <tr key={e.id}>
+                <td>
+                  <strong>{e.legal_name}</strong>
+                  <div className="sub">
+                    {e.file_number}
+                    {e.trade_name && ` · ${e.trade_name}`}
+                  </div>
+                </td>
+                <td className="mono">{e.gstin}</td>
+                <td className="mono">{e.pan}</td>
+                <td>{e.client_name ?? clients.find((c) => c.id === e.client_id)?.name}</td>
+                <td className="sub">{e.state_name ?? e.address?.state ?? "—"}</td>
+                <td className="sub">
+                  {employees.find((x) => x.id === e.assigned_employee_id)?.full_name ?? "—"}
+                </td>
+                <td className="num">
+                  <button className="primary" onClick={() => navigate(`/ca/files/${e.id}`)}>
+                    Open file
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {entities.length === 0 && (
+              <tr>
+                <td colSpan={7} className="empty">
+                  Nothing matches that search.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+
+      <NewClientForms reload={load} clients={clients} />
     </>
-  );
-}
-
-function OpenMonth({ onOpen }: { onOpen: (year: number, month: number) => void }) {
-  const now = new Date();
-  const [year, setYear] = useState(String(now.getFullYear()));
-  const [month, setMonth] = useState(String(now.getMonth() + 1));
-  return (
-    <div className="row" style={{ justifyContent: "flex-end" }}>
-      <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: 120 }}>
-        {Array.from({ length: 12 }, (_, i) => (
-          <option key={i + 1} value={i + 1}>
-            {new Date(2000, i, 1).toLocaleString("en", { month: "short" })}
-          </option>
-        ))}
-      </select>
-      <input value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 80 }} />
-      <button onClick={() => onOpen(Number(year), Number(month))}>Open</button>
-    </div>
   );
 }
 

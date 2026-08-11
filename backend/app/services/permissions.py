@@ -20,18 +20,14 @@ from app.models import (
 
 
 def visible_client_ids(db: Session, user: User) -> Optional[list]:
-    """Client ids the user may see. None means 'no restriction' (CA_ADMIN)."""
-    if user.role == Role.CA_ADMIN:
+    """Client ids the user may see. None means 'no restriction'.
+
+    All CA staff see every client. Employee accounts exist so the firm knows who
+    did what -- every upload, review and filing is attributed -- not to fence
+    people off from clients they are not formally assigned to.
+    """
+    if user.role in (Role.CA_ADMIN, Role.CA_EMPLOYEE):
         return None
-    if user.role == Role.CA_EMPLOYEE:
-        if not user.employee:
-            return []
-        rows = db.execute(
-            select(ClientAssignment.client_id).where(
-                ClientAssignment.employee_id == user.employee.id
-            )
-        ).scalars()
-        return list(rows)
     rows = db.execute(select(ClientUser.client_id).where(ClientUser.user_id == user.id)).scalars()
     return list(rows)
 
@@ -96,5 +92,7 @@ def require_ca(user: User) -> None:
 
 
 def require_admin(user: User) -> None:
+    """Kept for the few genuinely administrative actions. CA staff otherwise
+    have identical access -- see visible_client_ids."""
     if user.role != Role.CA_ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin only")

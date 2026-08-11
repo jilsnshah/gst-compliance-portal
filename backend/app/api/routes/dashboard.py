@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -11,6 +11,7 @@ from app.api.deps import get_current_user
 from app.api.serializers import audit_out, case_out, client_out
 from app.core.db import get_db
 from app.core.enums import (
+    AuditAction,
     MatchStatus,
     MismatchResolution,
     QueryStatus,
@@ -22,6 +23,7 @@ from app.core.enums import (
 from app.models import (
     AuditLog,
     Client,
+    Employee,
     ComplianceCase,
     Conversation,
     Document,
@@ -291,6 +293,102 @@ def compliance_grid(
     return {
         "periods": sorted(periods.values(), key=lambda p: p["code"]),
         "rows": sorted(rows.values(), key=lambda r: (r["client"], r["gstin"])),
+    }
+
+
+@router.get("/employees")
+def employee_activity(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    days: int = 30,
+):
+    """Who in the firm is doing what.
+
+    Staff are not fenced off by client, so this -- not access control -- is how
+    the firm knows who handled which return."""
+    require_ca(user)
+    since = datetime.utcnow() - timedelta(days=days)
+
+    staff = db.execute(
+        select(Employee).join(User, User.id == Employee.user_id).order_by(User.full_name)
+    ).scalars().all()
+
+    # Everything each person did in the window, grouped by action.
+    counts = {}
+    for actor_id, action, n in db.execute(
+        select(AuditLog.actor_user_id, AuditLog.action, func.count(AuditLog.id))
+        .where(AuditLog.created_at >= since)
+        .group_by(AuditLog.actor_user_id, AuditLog.action)
+    ).all():
+        counts.setdefault(actor_id, {})[action] = n
+
+    last_seen = dict(
+        db.execute(
+            select(AuditLog.actor_user_id, func.max(AuditLog.created_at)).group_by(
+                AuditLog.actor_user_id
+            )
+        ).all()
+    )
+
+    # What each person currently has open, from the reviewer stamp rather than
+    # the nominal assignment.
+    in_hand = {}
+    rows = db.execute(
+        select(ReturnItem, ComplianceCase, Entity, TaxPeriod)
+        .join(ComplianceCase, ComplianceCase.id == ReturnItem.case_id)
+        .join(Entity, Entity.id == ComplianceCase.entity_id)
+        .join(TaxPeriod, TaxPeriod.id == ComplianceCase.tax_period_id)
+        .where(ReturnItem.review_started_by_user_id.isnot(None))
+        .where(ReturnItem.status.notin_([ReturnStatus.FILED]))
+    ).all()
+    for item, case, entity, period in rows:
+        if is_terminal(item.return_type, item.status):
+            continue
+        in_hand.setdefault(item.review_started_by_user_id, []).append({
+            "case_id": case.id,
+            "gstin": entity.gstin,
+            "file_number": entity.file_number,
+            "period": period.label,
+            "return_type": item.return_type if isinstance(item.return_type, str) else item.return_type.value,
+            "status": ReturnStatus(item.status).value,
+            "since": item.review_started_at,
+        })
+
+    out = []
+    for emp in staff:
+        c = counts.get(emp.user_id, {})
+        out.append({
+            "employee_id": emp.id,
+            "user_id": emp.user_id,
+            "name": emp.user.full_name if emp.user else None,
+            "email": emp.user.email if emp.user else None,
+            "role": emp.user.role if emp.user else None,
+            "designation": emp.designation,
+            "last_active": last_seen.get(emp.user_id),
+            "counts": {
+                "uploads": c.get(AuditAction.UPLOAD, 0),
+                "status_changes": c.get(AuditAction.STATUS_CHANGE, 0),
+                "queries_raised": c.get(AuditAction.QUERY_RAISED, 0),
+                "queries_resolved": c.get(AuditAction.QUERY_RESOLVED, 0),
+                "messages": c.get(AuditAction.MESSAGE_POSTED, 0),
+                "reconciliations": c.get(AuditAction.RECON_RUN, 0),
+                "filings": c.get(AuditAction.FILED, 0),
+                "total": sum(c.values()),
+            },
+            "in_hand": sorted(in_hand.get(emp.user_id, []), key=lambda r: r["period"]),
+        })
+
+    recent = db.execute(
+        select(AuditLog)
+        .where(AuditLog.actor_user_id.in_([e.user_id for e in staff] or [-1]))
+        .order_by(AuditLog.created_at.desc())
+        .limit(60)
+    ).scalars().all()
+
+    return {
+        "days": days,
+        "employees": out,
+        "recent": [audit_out(a) for a in recent],
     }
 
 

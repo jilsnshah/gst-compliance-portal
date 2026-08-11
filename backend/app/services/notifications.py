@@ -39,20 +39,13 @@ def client_user_ids(db: Session, client_id: int) -> list:
 
 
 def ca_user_ids(db: Session, client_id: int, return_item: Optional[ReturnItem] = None) -> list:
-    """Assigned staff for the client, the return item's owner, plus all admins."""
-    ids = list(
+    """Every CA account. Staff are not fenced off by client, so anyone in the
+    firm can pick work up; attribution is what the employee accounts are for."""
+    return list(
         db.execute(
-            select(Employee.user_id)
-            .join(ClientAssignment, ClientAssignment.employee_id == Employee.id)
-            .where(ClientAssignment.client_id == client_id)
+            select(User.id).where(User.role.in_([Role.CA_ADMIN, Role.CA_EMPLOYEE]))
         ).scalars()
     )
-    if return_item is not None and return_item.assigned_employee_id:
-        emp = db.get(Employee, return_item.assigned_employee_id)
-        if emp:
-            ids.append(emp.user_id)
-    ids += list(db.execute(select(User.id).where(User.role == Role.CA_ADMIN)).scalars())
-    return ids
 
 
 def notify(
