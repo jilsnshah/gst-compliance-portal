@@ -14,7 +14,6 @@ from app.models import (
     ComplianceCase,
     Document,
     Entity,
-    GSTRegistration,
     ReturnItem,
     User,
 )
@@ -83,13 +82,12 @@ def get_document_or_403(db: Session, user: User, document_id: int) -> Document:
     return doc
 
 
-def get_gstin_or_403(db: Session, user: User, gst_registration_id: int) -> GSTRegistration:
-    reg = db.get(GSTRegistration, gst_registration_id)
-    if not reg:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "GST registration not found")
-    entity = db.get(Entity, reg.entity_id)
+def get_entity_or_403(db: Session, user: User, entity_id: int) -> Entity:
+    entity = db.get(Entity, entity_id)
+    if not entity:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
     assert_client_access(db, user, entity.client_id)
-    return reg
+    return entity
 
 
 def require_ca(user: User) -> None:

@@ -15,7 +15,6 @@ from app.models import (
     ComplianceCase,
     Document,
     Entity,
-    GSTRegistration,
     ReturnItem,
     StatusTransition,
     TaxPeriod,
@@ -26,7 +25,7 @@ from app.services import audit, periods, workflow
 from app.services.permissions import (
     assert_client_access,
     get_case_or_403,
-    get_gstin_or_403,
+    get_entity_or_403,
     get_return_item_or_403,
     require_ca,
     visible_client_ids,
@@ -41,11 +40,11 @@ def open_month(
 ):
     """Opens a GSTIN's tax period and creates its three return tracks."""
     require_ca(user)
-    reg = get_gstin_or_403(db, user, payload.gst_registration_id)
-    case = periods.get_or_create_case(db, reg.id, payload.year, payload.month)
+    entity = get_entity_or_403(db, user, payload.entity_id)
+    case = periods.get_or_create_case(db, entity.id, payload.year, payload.month)
     audit.record(
         db, user, AuditAction.CREATE, "ComplianceCase",
-        f"Compliance month opened for {reg.gstin} {payload.year}-{payload.month:02d}",
+        f"Compliance month opened for {entity.gstin} {payload.year}-{payload.month:02d}",
         target_id=case.id, client_id=case.client_id, case_id=case.id,
     )
     db.commit()
@@ -57,7 +56,6 @@ def list_cases(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     client_id: Optional[int] = None,
-    gst_registration_id: Optional[int] = None,
     entity_id: Optional[int] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
@@ -74,8 +72,6 @@ def list_cases(
     if client_id:
         assert_client_access(db, user, client_id)
         stmt = stmt.where(ComplianceCase.client_id == client_id)
-    if gst_registration_id:
-        stmt = stmt.where(ComplianceCase.gst_registration_id == gst_registration_id)
     if entity_id:
         stmt = stmt.where(ComplianceCase.entity_id == entity_id)
     if year:

@@ -31,15 +31,15 @@ export default function ClientDashboard() {
         <div>
           <h1>{data.clients[0]?.name ?? "My GST compliance"}</h1>
           <div className="sub">
-            {data.entities.length} file(s) ·{" "}
-            {data.entities.reduce((n, e) => n + e.gstins.length, 0)} GST registration(s)
+            {data.entities.length} file{data.entities.length === 1 ? "" : "s"} · one GST
+            registration each
           </div>
         </div>
         <select style={{ width: 260 }} value={entityId} onChange={(e) => setEntityId(e.target.value)}>
           <option value="">All files</option>
           {data.entities.map((e) => (
             <option key={e.id} value={e.id}>
-              {e.legal_name} ({e.file_number})
+              {e.legal_name} — {e.gstin}
             </option>
           ))}
         </select>

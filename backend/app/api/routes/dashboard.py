@@ -26,7 +26,6 @@ from app.models import (
     Conversation,
     Document,
     Entity,
-    GSTRegistration,
     InvoiceMatch,
     Message,
     Query,
@@ -123,10 +122,8 @@ def client_dashboard(
                 "trade_name": e.trade_name,
                 "file_number": e.file_number,
                 "client_id": e.client_id,
-                "gstins": [
-                    {"id": r.id, "gstin": r.gstin, "state_name": r.state_name}
-                    for r in e.registrations
-                ],
+                "gstin": e.gstin,
+                "state_name": e.state_name,
             }
             for e in db.execute(entities_stmt).scalars().all()
         ],
@@ -267,15 +264,14 @@ def compliance_grid(
     periods = {}
     for case in cases:
         period = db.get(TaxPeriod, case.tax_period_id)
-        reg = db.get(GSTRegistration, case.gst_registration_id)
         entity = db.get(Entity, case.entity_id)
         client = db.get(Client, case.client_id)
         periods[period.code] = {"code": period.code, "label": period.label}
         row = rows.setdefault(
-            reg.gstin,
+            entity.gstin,
             {
-                "gstin": reg.gstin,
-                "gst_registration_id": reg.id,
+                "gstin": entity.gstin,
+                "entity_id": entity.id,
                 "entity": entity.legal_name,
                 "client": client.name,
                 "cells": {},

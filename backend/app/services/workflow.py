@@ -275,8 +275,8 @@ def mark_data_submitted(db: Session, user: User, item: ReturnItem, note: str = "
 def default_employee_for(db: Session, case: ComplianceCase) -> Optional[int]:
     from app.models import GSTRegistration
 
-    reg = db.get(GSTRegistration, case.gst_registration_id)
-    if reg and reg.assigned_employee_id:
-        return reg.assigned_employee_id
+    entity = db.get(Entity, case.entity_id)
+    if entity and entity.assigned_employee_id:
+        return entity.assigned_employee_id
     emp = db.execute(select(Employee).limit(1)).scalars().first()
     return emp.id if emp else None

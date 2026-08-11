@@ -23,7 +23,6 @@ from app.models import (
     DocumentVersion,
     Employee,
     Entity,
-    GSTRegistration,
     InvoiceMatch,
     Message,
     Notification,
@@ -58,12 +57,15 @@ def user_out(user: User) -> dict:
 
 
 def client_out(client: Client) -> dict:
+    """The login email comes from the linked user, which is the only place it
+    is stored."""
+    login = client.user_links[0].user if client.user_links else None
     return {
         "id": client.id,
-        "client_code": client.client_code,
         "name": client.name,
-        "primary_email": client.primary_email,
-        "primary_phone": client.primary_phone,
+        "phone": client.phone,
+        "email": login.email if login else None,
+        "login_user_id": login.id if login else None,
         "is_active": client.is_active,
         "entity_count": len(client.entities),
     }
@@ -90,21 +92,12 @@ def entity_out(entity: Entity) -> dict:
         "contact_email": entity.contact_email,
         "applicable_services": entity.applicable_services or [],
         "is_active": entity.is_active,
-        "registrations": [gstin_out(r) for r in entity.registrations],
-    }
-
-
-def gstin_out(reg: GSTRegistration) -> dict:
-    return {
-        "id": reg.id,
-        "entity_id": reg.entity_id,
-        "gstin": reg.gstin,
-        "state_code": reg.state_code,
-        "state_name": reg.state_name,
-        "registration_date": reg.registration_date,
-        "filing_frequency": _val(reg.filing_frequency),
-        "assigned_employee_id": reg.assigned_employee_id,
-        "is_active": reg.is_active,
+        "gstin": entity.gstin,
+        "state_code": entity.state_code,
+        "state_name": entity.state_name,
+        "registration_date": entity.registration_date,
+        "filing_frequency": _val(entity.filing_frequency),
+        "assigned_employee_id": entity.assigned_employee_id,
     }
 
 
@@ -196,7 +189,6 @@ def _gstr3b_blocked_reason(case: ComplianceCase) -> Optional[str]:
 
 def case_out(db: Session, case: ComplianceCase, viewer: User, detail: bool = False) -> dict:
     period = db.get(TaxPeriod, case.tax_period_id)
-    reg = db.get(GSTRegistration, case.gst_registration_id)
     entity = db.get(Entity, case.entity_id)
     client = db.get(Client, case.client_id)
     waiting = waiting_on_client_ids(db, case.id)
@@ -204,15 +196,14 @@ def case_out(db: Session, case: ComplianceCase, viewer: User, detail: bool = Fal
     out = {
         "id": case.id,
         "status": _val(case.status),
-        "client": {"id": client.id, "name": client.name, "code": client.client_code},
+        "client": {"id": client.id, "name": client.name},
         "entity": {
             "id": entity.id,
             "legal_name": entity.legal_name,
             "trade_name": entity.trade_name,
             "file_number": entity.file_number,
         },
-        "gstin": reg.gstin,
-        "gst_registration_id": reg.id,
+        "gstin": entity.gstin,
         "period": period_out(period),
         "created_at": case.created_at,
         "completed_at": case.completed_at,

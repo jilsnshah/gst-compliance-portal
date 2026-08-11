@@ -11,16 +11,18 @@ from app.core.enums import Constitution, FilingFrequency
 
 
 class Client(Base):
-    """Top-level customer of the CA firm. Not the lowest-level object --
-    entities (files) and GST registrations sit below it."""
+    """A customer of the CA firm: a name, a phone number, and a login.
+
+    The email and password live on the linked User, so there is exactly one
+    copy of the login and it cannot drift out of step with what the client
+    actually signs in with.
+    """
 
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    client_code: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
-    primary_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    primary_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -30,7 +32,12 @@ class Client(Base):
 
 
 class Entity(Base):
-    """A file / business belonging to a client. Holds PAN-level master data."""
+    """A file: one business, one GST registration.
+
+    A client with two GSTINs has two files. That keeps the GSTIN -- the
+    identifier everything downstream actually keys on -- one hop from the
+    client instead of two.
+    """
 
     __tablename__ = "entities"
 
@@ -42,6 +49,18 @@ class Entity(Base):
     trade_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     pan: Mapped[str] = mapped_column(String(10), index=True)
     constitution: Mapped[Constitution] = mapped_column(String(30), default=Constitution.OTHER)
+
+    # The GST registration, formerly its own table.
+    gstin: Mapped[str] = mapped_column(String(15), unique=True, index=True)
+    state_code: Mapped[Optional[str]] = mapped_column(String(2), nullable=True)
+    state_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    registration_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    filing_frequency: Mapped[FilingFrequency] = mapped_column(
+        String(20), default=FilingFrequency.MONTHLY
+    )
+    assigned_employee_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
 
     address_line1: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     address_line2: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -58,34 +77,6 @@ class Entity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     client: Mapped[Client] = relationship(back_populates="entities")
-    registrations: Mapped[list["GSTRegistration"]] = relationship(back_populates="entity")
-
-
-class GSTRegistration(Base):
-    """A GSTIN. The critical identifier for everything downstream -- compliance
-    cases hang off this, not off the file number."""
-
-    __tablename__ = "gst_registrations"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"), index=True)
-
-    gstin: Mapped[str] = mapped_column(String(15), unique=True, index=True)
-    state_code: Mapped[Optional[str]] = mapped_column(String(2), nullable=True)
-    state_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    registration_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    filing_frequency: Mapped[FilingFrequency] = mapped_column(
-        String(20), default=FilingFrequency.MONTHLY
-    )
-
-    # Team member responsible for this GSTIN's compliance.
-    assigned_employee_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("employees.id"), nullable=True, index=True
-    )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    entity: Mapped[Entity] = relationship(back_populates="registrations")
 
 
 class ClientAssignment(Base):

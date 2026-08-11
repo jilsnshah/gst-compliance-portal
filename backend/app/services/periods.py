@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import INITIAL_STATUS, CaseStatus, ReturnType
-from app.models import ComplianceCase, Entity, FinancialYear, GSTRegistration, ReturnItem, TaxPeriod
+from app.models import ComplianceCase, Entity, FinancialYear, ReturnItem, TaxPeriod
 
 MONTH_NAMES = list(calendar.month_name)  # index 1..12
 
@@ -67,35 +67,34 @@ def get_or_create_tax_period(db: Session, year: int, month: int) -> TaxPeriod:
 
 def get_or_create_case(
     db: Session,
-    gst_registration_id: int,
+    entity_id: int,
     year: int,
     month: int,
     assigned_employee_id: Optional[int] = None,
 ) -> ComplianceCase:
-    """Opens a month for a GSTIN and creates its three return tracks."""
+    """Opens a month for a file (one file, one GSTIN) and creates its three
+    return tracks."""
     period = get_or_create_tax_period(db, year, month)
     case = db.execute(
         select(ComplianceCase).where(
-            ComplianceCase.gst_registration_id == gst_registration_id,
+            ComplianceCase.entity_id == entity_id,
             ComplianceCase.tax_period_id == period.id,
         )
     ).scalars().first()
     if case:
         return case
 
-    reg = db.get(GSTRegistration, gst_registration_id)
-    entity = db.get(Entity, reg.entity_id)
+    entity = db.get(Entity, entity_id)
     case = ComplianceCase(
-        gst_registration_id=gst_registration_id,
+        entity_id=entity.id,
         tax_period_id=period.id,
         client_id=entity.client_id,
-        entity_id=entity.id,
         status=CaseStatus.IN_PROGRESS,
     )
     db.add(case)
     db.flush()
 
-    owner = assigned_employee_id or reg.assigned_employee_id
+    owner = assigned_employee_id or entity.assigned_employee_id
     due = {
         ReturnType.GSTR1: period.gstr1_due_date,
         ReturnType.PR_RECON: period.gstr3b_due_date,

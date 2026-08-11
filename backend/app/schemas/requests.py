@@ -21,10 +21,12 @@ class LoginRequest(BaseModel):
 
 
 class ClientCreate(BaseModel):
-    client_code: str
+    """A client and its single login, created together by an admin."""
+
     name: str
-    primary_email: Optional[EmailStr] = None
-    primary_phone: Optional[str] = None
+    email: EmailStr
+    password: str
+    phone: Optional[str] = None
 
 
 class EntityCreate(BaseModel):
@@ -43,10 +45,6 @@ class EntityCreate(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     applicable_services: list = []
-
-
-class GSTRegistrationCreate(BaseModel):
-    entity_id: int
     gstin: str = Field(min_length=15, max_length=15)
     state_code: Optional[str] = None
     state_name: Optional[str] = None
@@ -73,7 +71,7 @@ class AssignmentCreate(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    gst_registration_id: int
+    entity_id: int
     year: int
     month: int = Field(ge=1, le=12)
 

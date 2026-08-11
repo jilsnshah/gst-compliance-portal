@@ -67,9 +67,12 @@ Reconciling those two produces 4 exact matches, 1 partial (date drift), 1 mismat
 
 ## What Stage 1 does
 
-**Masters** — Client → File/Entity (PAN, address, contact, services) → GSTIN. GSTIN is the critical
-identifier; compliance hangs off it, not off the file number. Client users are mapped to clients via
-`ClientUser`, so a Google account is never conflated with a GST registration.
+**Masters** — Client → File. A **file is one GST registration**: the GSTIN lives on the file, so a
+client with two GSTINs has two files. Compliance months hang off the file.
+
+A client is a name, a phone number and **one login**, created together by an admin — a client
+without a login could never reach their own portal. The email and password live on the linked
+`User`, so there is a single copy of the login and it cannot drift.
 
 **Monthly compliance** — opening a month for a GSTIN creates a `ComplianceCase` with three
 `ReturnItem` tracks: GSTR-1, GSTR-2B reconciliation, GSTR-3B.

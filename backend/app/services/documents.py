@@ -18,7 +18,7 @@ from app.models import (
     ComplianceCase,
     Document,
     DocumentVersion,
-    GSTRegistration,
+    Entity,
     ReturnItem,
     TaxPeriod,
     User,
@@ -72,7 +72,7 @@ def add_version(
     """Never overwrites. Previous versions are marked superseded but stay
     downloadable forever."""
     case = db.get(ComplianceCase, document.case_id)
-    reg = db.get(GSTRegistration, case.gst_registration_id)
+    entity = db.get(Entity, case.entity_id)
     period = db.get(TaxPeriod, case.tax_period_id)
 
     reviewable = DocumentType(document.doc_type) in REVIEWABLE_DOCS
@@ -87,7 +87,7 @@ def add_version(
     doc_type_value = (
         document.doc_type.value if hasattr(document.doc_type, "value") else str(document.doc_type)
     )
-    key = build_key(case.client_id, reg.gstin, period.code, doc_type_value, version_no, filename)
+    key = build_key(case.client_id, entity.gstin, period.code, doc_type_value, version_no, filename)
     get_storage().put(key, data, content_type)
 
     version = DocumentVersion(

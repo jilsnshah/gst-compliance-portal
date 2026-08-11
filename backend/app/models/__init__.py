@@ -2,7 +2,7 @@
 relationship targets and Base.metadata is complete."""
 
 from app.models.audit import AuditLog
-from app.models.client import Client, ClientAssignment, Entity, GSTRegistration
+from app.models.client import Client, ClientAssignment, Entity
 from app.models.comms import Conversation, Message, MessageAttachment, Notification
 from app.models.compliance import (
     ComplianceCase,
@@ -31,7 +31,6 @@ __all__ = [
     "Filing",
     "FinancialYear",
     "GSTR3BPayment",
-    "GSTRegistration",
     "InvoiceMatch",
     "InvoiceRecord",
     "Message",

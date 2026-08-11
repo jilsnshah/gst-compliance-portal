@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.api.serializers import client_out, employee_out, entity_out, gstin_out, user_out
+from app.api.serializers import client_out, employee_out, entity_out, user_out
 from app.core.db import get_db
 from app.core.enums import AuditAction, Role
 from app.core.security import hash_password
@@ -17,16 +17,9 @@ from app.models import (
     ClientUser,
     Employee,
     Entity,
-    GSTRegistration,
     User,
 )
-from app.schemas.requests import (
-    AssignmentCreate,
-    ClientCreate,
-    EntityCreate,
-    GSTRegistrationCreate,
-    UserCreate,
-)
+from app.schemas.requests import AssignmentCreate, ClientCreate, EntityCreate, UserCreate
 from app.services import audit
 from app.services.permissions import (
     assert_client_access,
@@ -52,17 +45,36 @@ def list_clients(db: Session = Depends(get_db), user: User = Depends(get_current
 def create_client(
     payload: ClientCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    require_ca(user)
-    if db.execute(select(Client).where(Client.client_code == payload.client_code)).scalars().first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "Client code already exists")
-    client = Client(**payload.model_dump())
+    """Creates the client and the one login they sign in with, together --
+    a client without a login could never reach their own portal."""
+    require_admin(user)
+    email = payload.email.lower()
+    if db.execute(select(User).where(User.email == email)).scalars().first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "That email already has a login")
+
+    client = Client(name=payload.name, phone=payload.phone)
     db.add(client)
     db.flush()
+
+    login = User(
+        email=email,
+        full_name=payload.name,
+        phone=payload.phone,
+        hashed_password=hash_password(payload.password),
+        role=Role.CLIENT,
+    )
+    db.add(login)
+    db.flush()
+    db.add(ClientUser(user_id=login.id, client_id=client.id, is_primary_contact=True))
+    db.flush()
+
     audit.record(
-        db, user, AuditAction.CREATE, "Client", f"Client {client.name} created",
+        db, user, AuditAction.CREATE, "Client",
+        f"Client {client.name} created with login {email}",
         target_id=client.id, client_id=client.id,
     )
     db.commit()
+    db.refresh(client)
     return client_out(client)
 
 
@@ -104,53 +116,20 @@ def create_entity(
         select(Entity).where(Entity.file_number == payload.file_number)
     ).scalars().first():
         raise HTTPException(status.HTTP_409_CONFLICT, "File number already exists")
-    entity = Entity(**payload.model_dump())
+    data = payload.model_dump()
+    data["gstin"] = data["gstin"].upper()
+    if db.execute(select(Entity).where(Entity.gstin == data["gstin"])).scalars().first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "That GSTIN already has a file")
+    entity = Entity(**data)
     db.add(entity)
     db.flush()
     audit.record(
-        db, user, AuditAction.CREATE, "Entity", f"File {entity.file_number} ({entity.legal_name}) created",
+        db, user, AuditAction.CREATE, "Entity",
+        f"File {entity.file_number} ({entity.legal_name}, {entity.gstin}) created",
         target_id=entity.id, client_id=entity.client_id,
     )
     db.commit()
     return entity_out(entity)
-
-
-# ---------------------------------------------------------------- gstins
-@router.get("/gstins")
-def list_gstins(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    stmt = select(GSTRegistration).join(Entity, Entity.id == GSTRegistration.entity_id)
-    ids = visible_client_ids(db, user)
-    if ids is not None:
-        stmt = stmt.where(Entity.client_id.in_(ids or [-1]))
-    return [gstin_out(r) for r in db.execute(stmt).scalars().all()]
-
-
-@router.post("/gstins", status_code=201)
-def create_gstin(
-    payload: GSTRegistrationCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    require_ca(user)
-    entity = db.get(Entity, payload.entity_id)
-    if not entity:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entity not found")
-    assert_client_access(db, user, entity.client_id)
-    if db.execute(
-        select(GSTRegistration).where(GSTRegistration.gstin == payload.gstin.upper())
-    ).scalars().first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "GSTIN already registered")
-    data = payload.model_dump()
-    data["gstin"] = data["gstin"].upper()
-    reg = GSTRegistration(**data)
-    db.add(reg)
-    db.flush()
-    audit.record(
-        db, user, AuditAction.CREATE, "GSTRegistration", f"GSTIN {reg.gstin} added",
-        target_id=reg.id, client_id=entity.client_id,
-    )
-    db.commit()
-    return gstin_out(reg)
 
 
 # ------------------------------------------------------ employees & users

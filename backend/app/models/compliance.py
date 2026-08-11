@@ -55,16 +55,15 @@ class ComplianceCase(Base):
 
     __tablename__ = "compliance_cases"
     __table_args__ = (
-        UniqueConstraint("gst_registration_id", "tax_period_id", name="uq_case_gstin_period"),
+        UniqueConstraint("entity_id", "tax_period_id", name="uq_case_entity_period"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    gst_registration_id: Mapped[int] = mapped_column(ForeignKey("gst_registrations.id"), index=True)
+    entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"), index=True)
     tax_period_id: Mapped[int] = mapped_column(ForeignKey("tax_periods.id"), index=True)
 
     # Denormalised for cheap dashboard scoping. Kept in sync at creation time.
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
-    entity_id: Mapped[int] = mapped_column(ForeignKey("entities.id"), index=True)
 
     status: Mapped[CaseStatus] = mapped_column(String(20), default=CaseStatus.NOT_STARTED, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

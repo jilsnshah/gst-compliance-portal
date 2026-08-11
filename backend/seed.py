@@ -18,15 +18,7 @@ from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.enums import Constitution, FilingFrequency, Role
 from app.core.security import hash_password
-from app.models import (
-    Client,
-    ClientAssignment,
-    ClientUser,
-    Employee,
-    Entity,
-    GSTRegistration,
-    User,
-)
+from app.models import Client, ClientAssignment, ClientUser, Employee, Entity, User
 from app.services import periods
 
 PASSWORD = "test123"
@@ -74,13 +66,8 @@ def seed():
         db.add_all([admin_emp, staff_emp])
         db.flush()
 
-        abc = Client(
-            client_code="CL001",
-            name="ABC Enterprises",
-            primary_email="client@test.com",
-            primary_phone="9876543210",
-        )
-        xyz = Client(client_code="CL002", name="XYZ Traders", primary_email="client2@test.com")
+        abc = Client(name="ABC Enterprises", phone="9876543210")
+        xyz = Client(name="XYZ Traders", phone="9820011223")
         db.add_all([abc, xyz])
         db.flush()
 
@@ -93,74 +80,57 @@ def seed():
             ClientAssignment(client_id=xyz.id, employee_id=admin_emp.id),
         ])
 
-        abc_entity = Entity(
-            client_id=abc.id,
-            file_number="F-001",
-            legal_name="ABC Enterprises",
-            trade_name="ABC Traders",
-            pan="AAACA1234A",
-            constitution=Constitution.PARTNERSHIP,
-            address_line1="12, Ashram Road",
-            city="Ahmedabad",
-            state="Gujarat",
-            pincode="380009",
-            contact_person="Amit Shah",
-            contact_phone="9876543210",
-            contact_email="client@test.com",
-            applicable_services=["GST", "Income Tax", "TDS"],
-        )
-        abc_entity2 = Entity(
-            client_id=abc.id,
-            file_number="F-002",
-            legal_name="ABC Logistics LLP",
-            trade_name="ABC Logistics",
-            pan="AAACB5678B",
-            constitution=Constitution.LLP,
-            city="Surat",
-            state="Gujarat",
-            contact_person="Amit Shah",
-            contact_email="client@test.com",
-            applicable_services=["GST"],
-        )
-        xyz_entity = Entity(
-            client_id=xyz.id,
-            file_number="F-003",
-            legal_name="XYZ Traders Private Limited",
-            pan="AAACX9999X",
-            constitution=Constitution.PRIVATE_LIMITED,
-            city="Pune",
-            state="Maharashtra",
-            applicable_services=["GST"],
-        )
-        db.add_all([abc_entity, abc_entity2, xyz_entity])
-        db.flush()
-
-        regs = [
-            GSTRegistration(
-                entity_id=abc_entity.id, gstin="24AAACA1234A1ZQ", state_code="24",
-                state_name="Gujarat", registration_date=date(2021, 4, 1),
-                filing_frequency=FilingFrequency.MONTHLY, assigned_employee_id=staff_emp.id,
+        # One file per GST registration.
+        files = [
+            Entity(
+                client_id=abc.id, file_number="F-001", legal_name="ABC Enterprises",
+                trade_name="ABC Traders", pan="AAACA1234A",
+                constitution=Constitution.PARTNERSHIP,
+                gstin="24AAACA1234A1ZQ", state_code="24", state_name="Gujarat",
+                registration_date=date(2021, 4, 1), filing_frequency=FilingFrequency.MONTHLY,
+                assigned_employee_id=staff_emp.id,
+                address_line1="12, Ashram Road", city="Ahmedabad", state="Gujarat",
+                pincode="380009", contact_person="Amit Shah", contact_phone="9876543210",
+                contact_email="client@test.com",
+                applicable_services=["GST", "Income Tax", "TDS"],
             ),
-            GSTRegistration(
-                entity_id=abc_entity.id, gstin="27AAACA1234A1ZM", state_code="27",
-                state_name="Maharashtra", registration_date=date(2022, 7, 1),
-                filing_frequency=FilingFrequency.MONTHLY, assigned_employee_id=staff_emp.id,
+            Entity(
+                client_id=abc.id, file_number="F-002", legal_name="ABC Enterprises",
+                trade_name="ABC Traders (Maharashtra)", pan="AAACA1234A",
+                constitution=Constitution.PARTNERSHIP,
+                gstin="27AAACA1234A1ZM", state_code="27", state_name="Maharashtra",
+                registration_date=date(2022, 7, 1), filing_frequency=FilingFrequency.MONTHLY,
+                assigned_employee_id=staff_emp.id,
+                city="Mumbai", state="Maharashtra",
+                contact_person="Amit Shah", contact_email="client@test.com",
+                applicable_services=["GST"],
             ),
-            GSTRegistration(
-                entity_id=abc_entity2.id, gstin="24AAACB5678B1ZP", state_code="24",
-                state_name="Gujarat", assigned_employee_id=staff_emp.id,
+            Entity(
+                client_id=abc.id, file_number="F-003", legal_name="ABC Logistics LLP",
+                trade_name="ABC Logistics", pan="AAACB5678B",
+                constitution=Constitution.LLP,
+                gstin="24AAACB5678B1ZP", state_code="24", state_name="Gujarat",
+                assigned_employee_id=staff_emp.id,
+                city="Surat", state="Gujarat",
+                contact_person="Amit Shah", contact_email="client@test.com",
+                applicable_services=["GST"],
             ),
-            GSTRegistration(
-                entity_id=xyz_entity.id, gstin="27AAACX9999X1ZR", state_code="27",
-                state_name="Maharashtra", assigned_employee_id=admin_emp.id,
+            Entity(
+                client_id=xyz.id, file_number="F-004",
+                legal_name="XYZ Traders Private Limited", pan="AAACX9999X",
+                constitution=Constitution.PRIVATE_LIMITED,
+                gstin="27AAACX9999X1ZR", state_code="27", state_name="Maharashtra",
+                assigned_employee_id=admin_emp.id,
+                city="Pune", state="Maharashtra",
+                applicable_services=["GST"],
             ),
         ]
-        db.add_all(regs)
+        db.add_all(files)
         db.flush()
 
-        for reg in regs[:3]:
+        for entity in files[:3]:
             for year, month in ((2026, 6), (2026, 7)):
-                periods.get_or_create_case(db, reg.id, year, month)
+                periods.get_or_create_case(db, entity.id, year, month)
 
         db.commit()
         print("seeded database at", settings.database_url)
