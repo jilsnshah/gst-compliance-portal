@@ -21,4 +21,6 @@ EXPOSE 8010
 
 # Migrations own the schema, so an upgrade never loses data. seed.py then
 # creates the first administrator if the database has no users at all.
-CMD ["sh", "-c", "alembic upgrade head && python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8010"]
+# SEED_DEMO=true loads the test accounts and sample workbooks; anything else
+# just ensures one real administrator exists.
+CMD ["sh", "-c", "alembic upgrade head && python seed.py $([ \"$SEED_DEMO\" = true ] && echo --demo) && uvicorn app.main:app --host 0.0.0.0 --port 8010"]

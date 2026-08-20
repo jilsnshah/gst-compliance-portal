@@ -21,6 +21,9 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@firm.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      # true = load admin@test.com / client@test.com and the sample workbooks.
+      # Leave false on the office server.
+      SEED_DEMO: ${SEED_DEMO:-false}
       # Same-origin through nginx, so no browser origin to allow.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
     healthcheck:
