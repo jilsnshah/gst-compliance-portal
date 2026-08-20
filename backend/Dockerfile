@@ -19,5 +19,6 @@ ENV DATABASE_URL=sqlite:////data/gst_platform.db \
 
 EXPOSE 8010
 
-# Seeds on first run only; seed.py exits without touching an existing database.
-CMD ["sh", "-c", "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8010"]
+# Migrations own the schema, so an upgrade never loses data. seed.py then
+# creates the first administrator if the database has no users at all.
+CMD ["sh", "-c", "alembic upgrade head && python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8010"]

@@ -76,8 +76,15 @@ export const money = (n?: number | null) =>
     ? "—"
     : `₹${Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const shortDate = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+// A date-only value ("2026-08-11") is a calendar date, not an instant, so it
+// is read as local rather than as UTC midnight -- otherwise it can render as
+// the previous day west of Greenwich.
+export const shortDate = (value?: string | null) => {
+  if (!value) return "—";
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const d = dateOnly ? new Date(`${value}T00:00:00`) : new Date(value);
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
 
 export const dateTime = (value?: string | null) =>
   value ? new Date(value + (value.endsWith("Z") ? "" : "Z")).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";

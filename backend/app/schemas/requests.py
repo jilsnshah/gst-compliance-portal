@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
+
+from app.schemas.types import Email
 
 from app.core.enums import (
     Constitution,
@@ -16,7 +18,7 @@ from app.core.enums import (
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Email
     password: str
 
 
@@ -24,7 +26,7 @@ class ClientCreate(BaseModel):
     """A client and its single login, created together by an admin."""
 
     name: str
-    email: EmailStr
+    email: Email
     password: str
     phone: Optional[str] = None
 
@@ -43,7 +45,7 @@ class EntityCreate(BaseModel):
     pincode: Optional[str] = None
     contact_person: Optional[str] = None
     contact_phone: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
+    contact_email: Optional[Email] = None
     applicable_services: list = []
     gstin: str = Field(min_length=15, max_length=15)
     state_code: Optional[str] = None
@@ -54,7 +56,7 @@ class EntityCreate(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: Email
     full_name: str
     password: str
     role: Role

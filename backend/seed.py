@@ -1,12 +1,17 @@
-"""Dev-stage seed: test accounts, one CA firm's worth of masters, an open
-compliance month and sample workbooks to exercise the matching engine.
+"""Bootstrap.
 
-    python seed.py            # create if absent
-    python seed.py --reset    # drop the DB file and rebuild
+    python seed.py            # ensure one admin exists (production default)
+    python seed.py --demo     # also load test accounts and sample workbooks
+    python seed.py --reset    # drop the DB file, then as above
+
+The schema itself belongs to Alembic -- run `alembic upgrade head` first. Demo
+data is opt-in so a real deployment never ends up with admin@test.com/test123
+sitting on it.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -22,6 +27,10 @@ from app.models import Client, ClientAssignment, ClientUser, Employee, Entity, U
 from app.services import periods
 
 PASSWORD = "test123"
+# The first real account, so the firm can sign in to a fresh install.
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@firm.local")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+ADMIN_NAME = os.environ.get("ADMIN_NAME", "Administrator")
 SAMPLE_DIR = Path(settings.storage_root) / "samples"
 
 
@@ -48,8 +57,32 @@ def make_user(db, email, name, role, password=PASSWORD, phone=None):
     return user
 
 
+def ensure_admin():
+    """Creates the firm's first admin if the database has no users at all.
+
+    Without this a fresh install has nobody who can log in; with it, there is
+    exactly one account and its password came from the environment, not source."""
+    db = SessionLocal()
+    try:
+        if db.execute(select(User)).scalars().first():
+            print("users already exist; nothing to bootstrap")
+            return
+        if not ADMIN_PASSWORD:
+            print(
+                "No users and no ADMIN_PASSWORD set.\n"
+                "  Set ADMIN_EMAIL and ADMIN_PASSWORD and run again, "
+                "or use --demo for test data."
+            )
+            return
+        admin = make_user(db, ADMIN_EMAIL.lower(), ADMIN_NAME, Role.CA_ADMIN, ADMIN_PASSWORD)
+        db.add(Employee(user_id=admin.id, employee_code="EMP001", designation="Administrator"))
+        db.commit()
+        print(f"created administrator {ADMIN_EMAIL}")
+    finally:
+        db.close()
+
+
 def seed():
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         if db.execute(select(User)).scalars().first():
@@ -206,5 +239,8 @@ def write_samples():
 if __name__ == "__main__":
     if "--reset" in sys.argv:
         reset_db()
-    seed()
-    write_samples()
+    if "--demo" in sys.argv or "--reset" in sys.argv:
+        seed()
+        write_samples()
+    else:
+        ensure_admin()

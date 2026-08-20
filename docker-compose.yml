@@ -1,32 +1,41 @@
+# Office deployment: both containers on the firm's own server, data on the
+# host. Nothing here reaches the internet.
+#
+#   cp .env.example .env     # then edit it -- SECRET_KEY and ADMIN_PASSWORD
+#   docker compose up -d --build
+#   open http://<server-ip>/ from any machine on the network
+
 services:
   api:
     build: ./backend
-    ports:
-      - "8010:8010"
+    restart: unless-stopped
     volumes:
-      # Everything that must survive a rebuild: the SQLite database and every
-      # uploaded document. Keep this directory backed up -- it is the system
-      # of record.
+      # The database and every uploaded document. This directory IS the firm's
+      # record -- back it up (see backup.sh).
       - ./data:/data
     environment:
-      # Add the deployed frontend origin once it exists.
-      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      # Vercel preview deployments get a new subdomain each time.
-      CORS_ORIGIN_REGEX: "https://.*\\.vercel\\.app"
-      # Override for anything beyond a local demo.
-      SECRET_KEY: "dev-secret-not-for-production"
-    restart: unless-stopped
+      # Signs every login token. Change it once, keep it secret; changing it
+      # later signs everyone out.
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      # Used only to create the first administrator on an empty database.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@firm.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      # Same-origin through nginx, so no browser origin to allow.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
-  # Gives the laptop a public HTTPS address so a hosted frontend can reach it.
-  # Quick tunnels need no Cloudflare account, but the URL changes every restart.
-  # Read the CURRENT one from the newest connection, not from a plain grep --
-  # the logs accumulate across restarts and a bare grep returns dead hostnames:
-  #   docker compose logs --tail 60 tunnel | grep -B4 "Registered tunnel connection"
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    # --protocol http2: this network blocks or throttles UDP, so the default
-    # QUIC transport never completes its handshake with Cloudflare's edge.
-    command: tunnel --no-autoupdate --protocol http2 --url http://api:8010
-    depends_on:
-      - api
+  web:
+    build: ./frontend
     restart: unless-stopped
+    ports:
+      # Port 80 on the server: staff open http://<server-ip>/
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_started
