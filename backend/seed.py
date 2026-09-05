@@ -1,8 +1,9 @@
 """Bootstrap.
 
-    python seed.py            # ensure one admin exists (production default)
-    python seed.py --demo     # also load test accounts and sample workbooks
-    python seed.py --reset    # drop the DB file, then as above
+    python seed.py             # ensure one admin exists (production default)
+    python seed.py --accounts  # the CA test logins, no business data
+    python seed.py --demo      # accounts plus demo clients, files and workbooks
+    python seed.py --reset     # drop the DB file first, then --demo
 
 The schema itself belongs to Alembic -- run `alembic upgrade head` first. Demo
 data is opt-in so a real deployment never ends up with admin@test.com/test123
@@ -82,11 +83,49 @@ def ensure_admin():
         db.close()
 
 
+def next_emp_code(db):
+    """EMP001, EMP002, ... skipping whatever is already taken. The bootstrap
+    admin holds EMP001 on a fresh install, so nothing here may assume it."""
+    taken = {c for (c,) in db.execute(select(Employee.employee_code)).all()}
+    n = 1
+    while f"EMP{n:03d}" in taken:
+        n += 1
+    return f"EMP{n:03d}"
+
+
+def seed_accounts():
+    """The CA test logins on their own -- useful for working with real client
+    data without two fictional clients cluttering the list.
+
+    Client logins are not created here on purpose: a CLIENT user with no client
+    linked to it can sign in but sees nothing. Client logins are created with
+    the client, from Clients & files."""
+    db = SessionLocal()
+    try:
+        if db.execute(select(User).where(User.email == "admin@test.com")).scalars().first():
+            print("test accounts already exist")
+            return
+        admin = make_user(db, "admin@test.com", "Priya Nair (Partner)", Role.CA_ADMIN)
+        staff = make_user(db, "staff@test.com", "Rahul Mehta", Role.CA_EMPLOYEE)
+        db.add_all([
+            Employee(user_id=admin.id, employee_code=next_emp_code(db), designation="Partner"),
+        ])
+        db.flush()
+        db.add(
+            Employee(user_id=staff.id, employee_code=next_emp_code(db),
+                     designation="Senior Associate")
+        )
+        db.commit()
+        print("created admin@test.com and staff@test.com (password: test123)")
+    finally:
+        db.close()
+
+
 def seed():
     db = SessionLocal()
     try:
-        if db.execute(select(User)).scalars().first():
-            print("database already seeded; use --reset to rebuild")
+        if db.execute(select(Client)).scalars().first():
+            print("demo data already present; use --reset to rebuild")
             return
 
         admin = make_user(db, "admin@test.com", "Priya Nair (Partner)", Role.CA_ADMIN)
@@ -94,9 +133,17 @@ def seed():
         client_user = make_user(db, "client@test.com", "Amit Shah", Role.CLIENT, phone="9876543210")
         client_user2 = make_user(db, "client2@test.com", "Neha Kulkarni", Role.CLIENT)
 
-        admin_emp = Employee(user_id=admin.id, employee_code="EMP001", designation="Partner")
-        staff_emp = Employee(user_id=staff.id, employee_code="EMP002", designation="Senior Associate")
-        db.add_all([admin_emp, staff_emp])
+        admin_emp = db.execute(select(Employee).where(Employee.user_id == admin.id)).scalars().first()
+        staff_emp = db.execute(select(Employee).where(Employee.user_id == staff.id)).scalars().first()
+        if admin_emp is None:
+            admin_emp = Employee(user_id=admin.id, employee_code=next_emp_code(db),
+                                 designation="Partner")
+            db.add(admin_emp)
+            db.flush()
+        if staff_emp is None:
+            staff_emp = Employee(user_id=staff.id, employee_code=next_emp_code(db),
+                                 designation="Senior Associate")
+            db.add(staff_emp)
         db.flush()
 
         abc = Client(name="ABC Enterprises", phone="9876543210")
@@ -242,5 +289,7 @@ if __name__ == "__main__":
     if "--demo" in sys.argv or "--reset" in sys.argv:
         seed()
         write_samples()
+    elif "--accounts" in sys.argv:
+        seed_accounts()
     else:
         ensure_admin()

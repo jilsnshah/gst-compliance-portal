@@ -23,4 +23,4 @@ EXPOSE 8010
 # creates the first administrator if the database has no users at all.
 # SEED_DEMO=true loads the test accounts and sample workbooks; anything else
 # just ensures one real administrator exists.
-CMD ["sh", "-c", "alembic upgrade head && python seed.py $([ \"$SEED_DEMO\" = true ] && echo --demo) && uvicorn app.main:app --host 0.0.0.0 --port 8010"]
+CMD ["sh", "-c", "alembic upgrade head && python seed.py $([ \"$SEED_DEMO\" = true ] && echo --demo) $([ \"$SEED_DEMO\" = accounts ] && echo --accounts) && uvicorn app.main:app --host 0.0.0.0 --port 8010"]
