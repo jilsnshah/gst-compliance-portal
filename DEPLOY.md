@@ -107,6 +107,59 @@ docker compose logs -f api   # what the API is doing
 
 ---
 
+## Starting a second machine with the client list already in it
+
+`bootstrap/gst_platform.db` is a committed snapshot of the database: every
+client, file and login, no uploaded documents. It exists so a new machine does
+not have to re-import the client sheet.
+
+It is **not** the live database and `git pull` never touches `./data/`. Copy it
+into place once, on a machine that has never been started:
+
+```bash
+mkdir -p data && cp bootstrap/gst_platform.db data/gst_platform.db
+docker compose up -d --build
+```
+
+Never copy it over a `data/` that has been worked in -- it would replace real
+work with a snapshot. To refresh the snapshot from the machine that holds the
+record:
+
+```bash
+docker compose exec -T api python -c "
+import sqlite3
+src = sqlite3.connect('/data/gst_platform.db'); dst = sqlite3.connect('/data/.snapshot.db')
+src.backup(dst); dst.close()"
+docker compose cp api:/data/.snapshot.db bootstrap/gst_platform.db
+docker compose exec -T api rm -f /data/.snapshot.db
+```
+
+Uploaded documents are not in it, and should not be -- they belong in backups
+(`backup.sh`), not in git.
+
+---
+
+## Letting the office reach it over the network
+
+The `web` container publishes `WEB_PORT` on every interface, so any machine on
+the same network opens:
+
+```
+http://<this machine's IP>:<WEB_PORT>/
+```
+
+Find the address with `ipconfig getifaddr en0` on macOS, `hostname -I` on
+Linux. The frontend talks to the API on the same origin through nginx, so there
+is nothing else to configure -- no CORS entry, no API URL.
+
+On macOS the firewall may ask to allow incoming connections the first time.
+Give the machine a fixed IP (or a DHCP reservation) so the URL stops changing.
+
+This is plain HTTP on the LAN. Do not forward the port to the internet without
+TLS in front of it.
+
+---
+
 ## Known limits for this stage
 
 - Plain HTTP on the LAN. Fine inside the office; do not expose port 80 to the

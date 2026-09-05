@@ -2,6 +2,10 @@ __pycache__/
 *.py[cod]
 backend/.venv/
 *.db
+# ...except the bootstrap snapshot, which is deliberately committed so a new
+# machine starts with the client list already in it. It is NOT the live
+# database: nothing here is ever pulled over ./data/.
+!bootstrap/*.db
 # Anchored: the uploads directory at the repo root, NOT backend/app/storage/
 # Docker volume: the database and every uploaded document
 /data/
@@ -15,3 +19,8 @@ frontend/dist/
 .DS_Store
 /backups/
 data.before-restore-*/
+
+# Client lists exported from the firm's own records. Real GSTINs -- this repo
+# is public. Never commit one.
+*.xls
+*.xlsx
