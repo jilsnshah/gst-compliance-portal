@@ -18,7 +18,8 @@ COLUMN_ALIASES = {
     ],
     "supplier_name": [
         "trade/legal name", "supplier name", "trade name", "legal name",
-        "party name", "vendor name", "name of supplier",
+        "party name", "vendor name", "name of supplier", "name", "supplier",
+        "trade/legal name of the supplier",
     ],
     "invoice_no": [
         "invoice number", "invoice no", "invoice no.", "inv no", "bill no",
@@ -26,12 +27,15 @@ COLUMN_ALIASES = {
     ],
     "invoice_date": [
         "invoice date", "inv date", "bill date", "document date", "doc date", "date",
+        # Abbreviated headers, as the firm's own 2B exports write them.
+        "invoice dt", "inv dt", "invoice dt.", "bill dt", "doc dt", "date of invoice",
     ],
     "invoice_type": ["invoice type", "document type", "type", "nature of supply"],
     "place_of_supply": ["place of supply", "pos", "state"],
     "taxable_value": [
         "taxable value", "taxable value (rs)", "taxable amount", "assessable value",
         "basic amount", "net amount", "taxable val",
+        "tax. val", "tax val", "tax.val", "taxable val.", "taxable value(rs)",
     ],
     "igst": ["integrated tax", "igst", "igst amount", "integrated tax(rs)", "igst (rs)"],
     "cgst": ["central tax", "cgst", "cgst amount", "central tax(rs)", "cgst (rs)"],
@@ -42,9 +46,12 @@ COLUMN_ALIASES = {
     "cess": ["cess", "cess amount", "cess(rs)"],
     "total_value": [
         "invoice value", "total value", "total amount", "invoice value (rs)",
-        "gross total", "bill amount",
+        "gross total", "bill amount", "value", "invoice value(rs)",
     ],
-    "itc_available": ["itc availability", "itc available", "availability of itc"],
+    "itc_available": [
+        "itc availability", "itc available", "availability of itc",
+        "is eligible itc", "itc eligibility",
+    ],
 }
 
 NUMERIC_FIELDS = ["taxable_value", "igst", "cgst", "sgst", "cess", "total_value"]
@@ -288,6 +295,25 @@ def _guess_header_row(rows) -> Optional[int]:
     return best if best_score >= 3 else None
 
 
+def _is_header_like(row) -> bool:
+    """A repeated header row. GST 2B exports stack B2B, CDNR, IMPG and so on in
+    one sheet, each with its own header, so this is where a section ends."""
+    return sum(1 for c in row if _HEADER_LOOKUP.get(_norm_header(c))) >= 3
+
+
+def _is_section_end(row, invoice_no_col: Optional[int]) -> bool:
+    """A 'Total' line closing a section: the word in the first filled cell and
+    no invoice number of its own. A supplier actually called Total still has an
+    invoice number, so it survives."""
+    first = next((str(c).strip().lower() for c in row if c is not None and str(c).strip()), "")
+    if first not in ("total", "totals", "grand total", "sub total", "subtotal"):
+        return False
+    if invoice_no_col is None or invoice_no_col >= len(row):
+        return True
+    cell = row[invoice_no_col]
+    return cell is None or str(cell).strip() == ""
+
+
 def parse_with_mapping(data: bytes, mapping: dict) -> dict:
     """Parses using column positions the CA stated. No guessing anywhere.
 
@@ -330,6 +356,8 @@ def parse_with_mapping(data: bytes, mapping: dict) -> dict:
     for offset, row in enumerate(rows[start:], start=start + 1):
         if all(cell is None or str(cell).strip() == "" for cell in row):
             continue
+        if _is_header_like(row) or _is_section_end(row, columns.get("invoice_no")):
+            break
         rec, row_errors = _row_to_record(row, columns, offset)
         if row_errors:
             errors.append(f"Row {offset}: " + "; ".join(row_errors))
@@ -458,14 +486,38 @@ def parse_invoice_workbook(data: bytes, source: InvoiceSource) -> dict:
         if c and i not in mapping.values() and _norm_header(c)
     ]
 
-    records, errors = [], []
+    # A header row can score well enough to be recognised while still missing a
+    # required column -- an abbreviation the alias table has never seen. Parsing
+    # on regardless produced rows with no date and a taxable value of zero, and
+    # every one of them then reconciled as a date and value mismatch. Refuse
+    # instead, and name the column that could not be found.
     missing = [f for f in REQUIRED_FIELDS if f not in mapping]
     if missing:
-        errors.append("Missing required columns: " + ", ".join(missing))
+        found = [str(c).strip() for c in header_row if c is not None and str(c).strip()]
+        return {
+            "records": [],
+            "errors": [
+                "Could not find these columns: " + ", ".join(m.replace("_", " ") for m in missing)
+                + ". The header row reads: " + ", ".join(found[:20])
+                + ". Nothing was imported, because rows parsed without them would "
+                "reconcile as mismatches."
+            ],
+            "header_row": header_index + 1,
+            "mapped_columns": {k: v for k, v in mapping.items()},
+            "unmapped_headers": unmapped,
+            "source": source.value,
+        }
+
+    records, errors = [], []
 
     for offset, row in enumerate(rows[header_index + 1:], start=header_index + 2):
         if all(cell is None or str(cell).strip() == "" for cell in row):
             continue
+        # The B2B block ends here; CDNR and the rest are different documents
+        # with their own headers, and their rows carry no invoice number to
+        # reconcile against a purchase register anyway.
+        if _is_header_like(row) or _is_section_end(row, mapping.get("invoice_no")):
+            break
 
         def cell(field):
             idx = mapping.get(field)

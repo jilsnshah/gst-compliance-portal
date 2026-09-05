@@ -1,6 +1,9 @@
-/* Where the API lives. Baked in at build time from VITE_API_URL, but
-   overridable at runtime with ?api=https://... so a frontend already deployed
-   on Vercel can be pointed at a new tunnel URL without redeploying. */
+/* Where the API lives. Empty means same origin -- the browser calls /api on
+   whatever host it loaded the page from, which is what the Docker build sets,
+   so every machine on the network works with no configuration.
+
+   ?api=https://... still overrides it for a browser that needs to point
+   somewhere else, and ?api= on its own clears that override. */
 const API_KEY = "gst_api_url";
 
 function resolveBase(): string {
@@ -9,11 +12,11 @@ function resolveBase(): string {
     if (fromQuery) localStorage.setItem(API_KEY, fromQuery.replace(/\/$/, ""));
     else localStorage.removeItem(API_KEY);
   }
-  return (
-    localStorage.getItem(API_KEY) ??
-    import.meta.env.VITE_API_URL ??
-    "http://127.0.0.1:8010"
-  );
+  const stored = localStorage.getItem(API_KEY);
+  if (stored) return stored;
+  // Same origin unless the dev server said otherwise: `npm run dev` has no
+  // proxy, so it falls back to the API's own port.
+  return import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8010" : "");
 }
 
 export const API_BASE = resolveBase();

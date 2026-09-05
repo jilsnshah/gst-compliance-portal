@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { API_BASE, isCA, setApiBase } from "../api";
+import { isCA } from "../api";
 
+// Only accounts that actually exist. Client logins are created with the client,
+// so there is no fixed one to offer here.
 const TEST_ACCOUNTS = [
   { email: "admin@test.com", label: "CA Admin / Partner — sees every client" },
-  { email: "staff@test.com", label: "CA Employee — sees assigned clients only" },
-  { email: "client@test.com", label: "Client — ABC Enterprises" },
-  { email: "client2@test.com", label: "Client — XYZ Traders" },
+  { email: "staff@test.com", label: "CA Employee — sees every client too" },
 ];
 
 export default function Login() {
@@ -59,24 +59,9 @@ export default function Login() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
 
-        <details style={{ marginTop: 16 }}>
-          <summary>API: {API_BASE}</summary>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              defaultValue={API_BASE}
-              placeholder="https://your-tunnel.trycloudflare.com"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") setApiBase((e.target as HTMLInputElement).value.trim());
-              }}
-            />
-          </div>
-          <div className="sub" style={{ marginTop: 6 }}>
-            Press Enter to point this frontend at a different backend. Saved in this browser.
-          </div>
-        </details>
-
         <div className="test-accounts">
-          Dev-stage test accounts (password <code>test123</code>). Google sign-in arrives in Stage 2.
+          Test accounts (password <code>test123</code>). Clients sign in with the
+          email set when their file was created.
           {TEST_ACCOUNTS.map((acc) => (
             <button key={acc.email} type="button" onClick={() => { setEmail(acc.email); setPassword("test123"); }}>
               <strong>{acc.email}</strong>
