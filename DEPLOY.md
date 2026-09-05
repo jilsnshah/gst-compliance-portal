@@ -107,34 +107,33 @@ docker compose logs -f api   # what the API is doing
 
 ---
 
-## Starting a second machine with the client list already in it
+## Starting the server with the client list already in it
 
-`bootstrap/gst_platform.db` is a committed snapshot of the database: every
-client, file and login, no uploaded documents. It exists so a new machine does
-not have to re-import the client sheet.
+The client list is not in git -- the sheet holds real GSTINs. Import it on the
+server instead, which takes one command and is repeatable.
 
-It is **not** the live database and `git pull` never touches `./data/`. Copy it
-into place once, on a machine that has never been started:
+Copy the firm's yearly-turnover sheet onto the server, then:
 
 ```bash
-mkdir -p data && cp bootstrap/gst_platform.db data/gst_platform.db
-docker compose up -d --build
+docker compose cp "YRTURN_MORETHAN5CR_25-26.xls" api:/tmp/clients.xls
+docker compose exec -w /app api python import_clients.py /tmp/clients.xls
 ```
 
-Never copy it over a `data/` that has been worked in -- it would replace real
-work with a snapshot. To refresh the snapshot from the machine that holds the
-record:
+One client, one file and one client login per row: file number is the key,
+PAN and state are read off the GSTIN, and everything else is filled in later
+from Clients & files. Add `--dry-run` to see what it would do first. Running it
+again skips what is already there, so a sheet that gains rows next month can
+simply be re-imported.
 
-```bash
-docker compose exec -T api python -c "
-import sqlite3
-src = sqlite3.connect('/data/gst_platform.db'); dst = sqlite3.connect('/data/.snapshot.db')
-src.backup(dst); dst.close()"
-docker compose cp api:/data/.snapshot.db bootstrap/gst_platform.db
-docker compose exec -T api rm -f /data/.snapshot.db
-```
+The administrator comes from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env` and is
+created on first start -- including when the client logins are already in place,
+since a hundred client logins still leaves nobody who can run the firm.
 
-Uploaded documents are not in it, and should not be -- they belong in backups
+`bootstrap/gst_platform.db` is a committed snapshot from development. It is
+**not** the live database and `git pull` never touches `./data/`; ignore it
+unless you deliberately want a copy of that development state.
+
+Uploaded documents live in `./data/storage` and belong in backups
 (`backup.sh`), not in git.
 
 ---

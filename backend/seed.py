@@ -59,14 +59,20 @@ def make_user(db, email, name, role, password=PASSWORD, phone=None):
 
 
 def ensure_admin():
-    """Creates the firm's first admin if the database has no users at all.
+    """Creates the firm's first admin if nobody at the firm can sign in yet.
 
-    Without this a fresh install has nobody who can log in; with it, there is
-    exactly one account and its password came from the environment, not source."""
+    The test is for a CA login, not for any user at all: a database seeded from
+    the client list has a hundred client logins and still nobody who can run
+    the place. Without this a fresh install has nobody who can log in; with it,
+    there is exactly one account and its password came from the environment,
+    not from source."""
     db = SessionLocal()
     try:
-        if db.execute(select(User)).scalars().first():
-            print("users already exist; nothing to bootstrap")
+        existing = db.execute(
+            select(User).where(User.role.in_([Role.CA_ADMIN, Role.CA_EMPLOYEE]))
+        ).scalars().first()
+        if existing:
+            print("a CA login already exists; nothing to bootstrap")
             return
         if not ADMIN_PASSWORD:
             print(
@@ -76,7 +82,9 @@ def ensure_admin():
             )
             return
         admin = make_user(db, ADMIN_EMAIL.lower(), ADMIN_NAME, Role.CA_ADMIN, ADMIN_PASSWORD)
-        db.add(Employee(user_id=admin.id, employee_code="EMP001", designation="Administrator"))
+        db.flush()
+        db.add(Employee(user_id=admin.id, employee_code=next_emp_code(db),
+                        designation="Administrator"))
         db.commit()
         print(f"created administrator {ADMIN_EMAIL}")
     finally:
