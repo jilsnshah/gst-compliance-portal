@@ -251,43 +251,98 @@ EXPORT_SECTIONS = {
     "probable_match": ("Probable match", [MatchStatus.PROBABLE_MATCH]),
 }
 
+# Both sides of every comparison, side by side. A mismatch is only useful if
+# the reader can see which value differs, so the identity columns -- GSTIN,
+# invoice number, date -- are printed for the purchase register and for the
+# GSTR-2B separately rather than collapsed into one.
 EXPORT_HEADERS = [
-    "Match Status", "Supplier GSTIN", "Supplier Name", "Invoice No", "Invoice Date",
-    "PR Taxable", "PR IGST", "PR CGST", "PR SGST", "PR Cess",
-    "2B Taxable", "2B IGST", "2B CGST", "2B SGST", "2B Cess",
-    "Taxable Diff", "Tax Diff", "Diff Flags", "Resolution", "CA Remark", "Client Response",
+    "Match Status", "What differs",
+    "Supplier GSTIN (PR)", "Supplier GSTIN (2B)",
+    "Supplier Name (PR)", "Supplier Name (2B)",
+    "Invoice No (PR)", "Invoice No (2B)",
+    "Invoice Date (PR)", "Invoice Date (2B)",
+    "Taxable (PR)", "Taxable (2B)", "Taxable Diff",
+    "IGST (PR)", "IGST (2B)",
+    "CGST (PR)", "CGST (2B)",
+    "SGST (PR)", "SGST (2B)",
+    "Cess (PR)", "Cess (2B)",
+    "Total Value (PR)", "Total Value (2B)", "Tax Diff",
+    "Resolution", "CA Remark", "Client Response",
+    "PR row", "2B row",
 ]
+
+MATCH_STATUS_TEXT = {
+    MatchStatus.EXACT_MATCH: "Matched",
+    MatchStatus.PARTIAL_MATCH: "Partial match (date differs)",
+    MatchStatus.PROBABLE_MATCH: "Probable match",
+    MatchStatus.MISMATCH: "Mismatch",
+    MatchStatus.MISSING_IN_2B: "In Purchase Register, not in GSTR-2B",
+    MatchStatus.MISSING_IN_PR: "In GSTR-2B, not in Purchase Register",
+}
+
+DIFF_FLAG_TEXT = {
+    "GSTIN_MISMATCH": "supplier GSTIN",
+    "INVOICE_NO_MISMATCH": "invoice number",
+    "INVOICE_DATE_MISMATCH": "invoice date",
+    "TAXABLE_VALUE_MISMATCH": "taxable value",
+    "TAX_AMOUNT_MISMATCH": "total tax",
+    "IGST_MISMATCH": "IGST",
+    "CGST_MISMATCH": "CGST",
+    "SGST_MISMATCH": "SGST",
+    "CESS_MISMATCH": "cess",
+}
+
+
+def _describe_diffs(match: InvoiceMatch) -> str:
+    flags = match.diff_flags or []
+    if not flags:
+        return ""
+    return ", ".join(DIFF_FLAG_TEXT.get(f, f) for f in flags)
 
 
 def _match_row(m: InvoiceMatch) -> list:
     pr, tb = m.pr_record, m.gstr2b_record
-    ref = pr or tb
+
+    def side(rec, field):
+        if rec is None:
+            return ""
+        value = getattr(rec, field, None)
+        if value is None:
+            return ""
+        return value.isoformat() if hasattr(value, "isoformat") else value
+
+    status = MatchStatus(m.match_status)
     return [
-        m.match_status if isinstance(m.match_status, str) else m.match_status.value,
-        ref.supplier_gstin if ref else "",
-        ref.supplier_name if ref else "",
-        ref.invoice_no if ref else "",
-        ref.invoice_date.isoformat() if ref and ref.invoice_date else "",
-        pr.taxable_value if pr else "", pr.igst if pr else "",
-        pr.cgst if pr else "", pr.sgst if pr else "", pr.cess if pr else "",
-        tb.taxable_value if tb else "", tb.igst if tb else "",
-        tb.cgst if tb else "", tb.sgst if tb else "", tb.cess if tb else "",
-        m.taxable_value_diff, m.tax_diff, ", ".join(m.diff_flags or []),
+        MATCH_STATUS_TEXT.get(status, status.value),
+        _describe_diffs(m),
+        side(pr, "supplier_gstin"), side(tb, "supplier_gstin"),
+        side(pr, "supplier_name"), side(tb, "supplier_name"),
+        side(pr, "invoice_no"), side(tb, "invoice_no"),
+        side(pr, "invoice_date"), side(tb, "invoice_date"),
+        side(pr, "taxable_value"), side(tb, "taxable_value"), m.taxable_value_diff,
+        side(pr, "igst"), side(tb, "igst"),
+        side(pr, "cgst"), side(tb, "cgst"),
+        side(pr, "sgst"), side(tb, "sgst"),
+        side(pr, "cess"), side(tb, "cess"),
+        side(pr, "total_value"), side(tb, "total_value"), m.tax_diff,
         m.resolution_status if isinstance(m.resolution_status, str) else m.resolution_status.value,
         m.ca_remark or "", m.client_response or "",
+        side(pr, "source_row_no"), side(tb, "source_row_no"),
     ]
 
 
-def _write_sheet(sheet, rows: list) -> None:
+def _write_sheet(sheet, matches: list) -> None:
     sheet.append(EXPORT_HEADERS)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
-    for m in rows:
-        sheet.append(_match_row(m))
+    rows = [_match_row(m) for m in matches]
+    for row in rows:
+        sheet.append(row)
     sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
     # Enough width to read without dragging every column open.
     for i, header in enumerate(EXPORT_HEADERS, start=1):
-        longest = max([len(header)] + [len(str(r[i - 1] or "")) for r in map(_match_row, rows)] or [0])
+        longest = max([len(header)] + [len(str(r[i - 1] or "")) for r in rows])
         sheet.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 10), 42)
 
 
@@ -362,6 +417,15 @@ def export_recon(
     workbook = Workbook()
     _cover_sheet(workbook.active, case, period, run, entity, client, label)
     workbook.active.title = "Summary"
+    if section == "all":
+        # Every line in one place, in the order the categories are listed, so
+        # the whole reconciliation can be read or filtered without hopping
+        # between sheets.
+        ordered = [
+            m for _, statuses in EXPORT_SECTIONS.values()
+            for m in rows if MatchStatus(m.match_status) in statuses
+        ]
+        _write_sheet(workbook.create_sheet(title="All invoices"), ordered)
     for name, statuses in wanted.values():
         _write_sheet(
             workbook.create_sheet(title=name),

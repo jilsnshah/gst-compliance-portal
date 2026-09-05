@@ -90,7 +90,12 @@ def parse_date(value) -> Optional[date]:
     if isinstance(value, date):
         return value
     text = str(value).strip()
-    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%m/%d/%Y", "%d.%m.%Y"):
+    # A cell holding a date as text often carries a time with it -- CSV exports
+    # and workbooks where the column was formatted as text both do this. The
+    # date is the part that matters.
+    text = re.sub(r"[T ]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?$", "", text).strip()
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%m/%d/%Y",
+                "%d.%m.%Y", "%Y/%m/%d", "%d-%b-%y", "%d/%m/%y"):
         try:
             return datetime.strptime(text, fmt).date()
         except ValueError:
