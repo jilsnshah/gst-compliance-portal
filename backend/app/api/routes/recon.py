@@ -7,6 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,8 +24,10 @@ from app.core.enums import (
     ReturnType,
 )
 from app.models import (
+    Client,
     Document,
     DocumentVersion,
+    Entity,
     InvoiceMatch,
     InvoiceRecord,
     ReconciliationRun,
@@ -235,62 +239,148 @@ def update_match(
     return match_out(match)
 
 
+# The report gets sent to clients and to their suppliers' accountants, so each
+# section can be exported on its own -- nobody should have to be handed the
+# whole reconciliation to be shown the three invoices they are missing.
+EXPORT_SECTIONS = {
+    "matched": ("Matched", [MatchStatus.EXACT_MATCH]),
+    "missing_in_gstr2b": ("Missing in GSTR-2B", [MatchStatus.MISSING_IN_2B]),
+    "missing_in_purchase_register": ("Missing in PR", [MatchStatus.MISSING_IN_PR]),
+    "mismatch": ("Mismatch", [MatchStatus.MISMATCH]),
+    "partial_match": ("Partial match", [MatchStatus.PARTIAL_MATCH]),
+    "probable_match": ("Probable match", [MatchStatus.PROBABLE_MATCH]),
+}
+
+EXPORT_HEADERS = [
+    "Match Status", "Supplier GSTIN", "Supplier Name", "Invoice No", "Invoice Date",
+    "PR Taxable", "PR IGST", "PR CGST", "PR SGST", "PR Cess",
+    "2B Taxable", "2B IGST", "2B CGST", "2B SGST", "2B Cess",
+    "Taxable Diff", "Tax Diff", "Diff Flags", "Resolution", "CA Remark", "Client Response",
+]
+
+
+def _match_row(m: InvoiceMatch) -> list:
+    pr, tb = m.pr_record, m.gstr2b_record
+    ref = pr or tb
+    return [
+        m.match_status if isinstance(m.match_status, str) else m.match_status.value,
+        ref.supplier_gstin if ref else "",
+        ref.supplier_name if ref else "",
+        ref.invoice_no if ref else "",
+        ref.invoice_date.isoformat() if ref and ref.invoice_date else "",
+        pr.taxable_value if pr else "", pr.igst if pr else "",
+        pr.cgst if pr else "", pr.sgst if pr else "", pr.cess if pr else "",
+        tb.taxable_value if tb else "", tb.igst if tb else "",
+        tb.cgst if tb else "", tb.sgst if tb else "", tb.cess if tb else "",
+        m.taxable_value_diff, m.tax_diff, ", ".join(m.diff_flags or []),
+        m.resolution_status if isinstance(m.resolution_status, str) else m.resolution_status.value,
+        m.ca_remark or "", m.client_response or "",
+    ]
+
+
+def _write_sheet(sheet, rows: list) -> None:
+    sheet.append(EXPORT_HEADERS)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for m in rows:
+        sheet.append(_match_row(m))
+    sheet.freeze_panes = "A2"
+    # Enough width to read without dragging every column open.
+    for i, header in enumerate(EXPORT_HEADERS, start=1):
+        longest = max([len(header)] + [len(str(r[i - 1] or "")) for r in map(_match_row, rows)] or [0])
+        sheet.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 10), 42)
+
+
+def _cover_sheet(sheet, case, period, run, entity, client, section_label: str) -> None:
+    """Who this is about and what was compared. A bare grid of invoice rows
+    means nothing to whoever it gets forwarded to."""
+    counts = (run.summary or {}).get("counts", {})
+    params = run.params or {}
+    rows = [
+        ("GSTR-2B / Purchase Register reconciliation", ""),
+        ("", ""),
+        ("Client", client.name if client else ""),
+        ("File number", entity.file_number if entity else ""),
+        ("GSTIN", entity.gstin if entity else ""),
+        ("Period", period.label if period else ""),
+        ("Section", section_label),
+        ("Reconciled on", run.created_at.strftime("%d %b %Y %H:%M") if run.created_at else ""),
+        ("", ""),
+        ("Purchase Register rows", params.get("pr_rows", "")),
+        ("GSTR-2B rows", params.get("gstr2b_rows", "")),
+        ("Amount tolerance", params.get("amount_tolerance", "")),
+        ("Date tolerance (days)", params.get("date_tolerance_days", "")),
+        ("", ""),
+        ("Exact matches", counts.get(MatchStatus.EXACT_MATCH.value, 0)),
+        ("Partial matches", counts.get(MatchStatus.PARTIAL_MATCH.value, 0)),
+        ("Probable matches", counts.get(MatchStatus.PROBABLE_MATCH.value, 0)),
+        ("Mismatches", counts.get(MatchStatus.MISMATCH.value, 0)),
+        ("Missing in GSTR-2B", counts.get(MatchStatus.MISSING_IN_2B.value, 0)),
+        ("Missing in Purchase Register", counts.get(MatchStatus.MISSING_IN_PR.value, 0)),
+        ("", ""),
+        ("Total lines compared", (run.summary or {}).get("total", 0)),
+        ("Exact match rate", f"{(run.summary or {}).get('match_rate', 0)}%"),
+    ]
+    for label, value in rows:
+        sheet.append([label, value])
+    sheet["A1"].font = Font(bold=True, size=13)
+    for row in sheet.iter_rows(min_row=3, min_col=1, max_col=1):
+        row[0].font = Font(bold=True)
+    sheet.column_dimensions["A"].width = 30
+    sheet.column_dimensions["B"].width = 40
+
+
 @router.get("/cases/{case_id}/recon/export")
 def export_recon(
-    case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    case_id: int,
+    section: str = "all",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    """The whole reconciliation, or one section of it, as a workbook to send on.
+
+    section = all, or any of the report keys the UI shows as tabs.
+    """
     case = get_case_or_403(db, user, case_id)
     run = _current_run(db, case_id)
     if not run:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No reconciliation run for this case")
-    rows = db.execute(select(InvoiceMatch).where(InvoiceMatch.run_id == run.id)).scalars().all()
+    if section != "all" and section not in EXPORT_SECTIONS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Unknown section. Use all, " + ", ".join(EXPORT_SECTIONS),
+        )
 
-    headers = [
-        "Match Status", "Supplier GSTIN", "Supplier Name", "Invoice No", "Invoice Date",
-        "PR Taxable", "PR IGST", "PR CGST", "PR SGST", "PR Cess",
-        "2B Taxable", "2B IGST", "2B CGST", "2B SGST", "2B Cess",
-        "Taxable Diff", "Tax Diff", "Diff Flags", "Resolution", "CA Remark", "Client Response",
-    ]
+    rows = db.execute(select(InvoiceMatch).where(InvoiceMatch.run_id == run.id)).scalars().all()
+    period = db.get(TaxPeriod, case.tax_period_id)
+    entity = db.get(Entity, case.entity_id)
+    client = db.get(Client, case.client_id)
+
+    wanted = EXPORT_SECTIONS if section == "all" else {section: EXPORT_SECTIONS[section]}
+    label = "All sections" if section == "all" else EXPORT_SECTIONS[section][0]
+
     workbook = Workbook()
-    sheets = {
-        "Matched": [MatchStatus.EXACT_MATCH],
-        "Missing in GSTR-2B": [MatchStatus.MISSING_IN_2B],
-        "Missing in PR": [MatchStatus.MISSING_IN_PR],
-        "Mismatch": [MatchStatus.MISMATCH, MatchStatus.PARTIAL_MATCH, MatchStatus.PROBABLE_MATCH],
-    }
-    first = True
-    for name, statuses in sheets.items():
-        sheet = workbook.active if first else workbook.create_sheet()
-        sheet.title = name
-        first = False
-        sheet.append(headers)
-        for m in rows:
-            if MatchStatus(m.match_status) not in statuses:
-                continue
-            pr, tb = m.pr_record, m.gstr2b_record
-            ref = pr or tb
-            sheet.append([
-                m.match_status if isinstance(m.match_status, str) else m.match_status.value,
-                ref.supplier_gstin if ref else "",
-                ref.supplier_name if ref else "",
-                ref.invoice_no if ref else "",
-                ref.invoice_date.isoformat() if ref and ref.invoice_date else "",
-                pr.taxable_value if pr else "", pr.igst if pr else "",
-                pr.cgst if pr else "", pr.sgst if pr else "", pr.cess if pr else "",
-                tb.taxable_value if tb else "", tb.igst if tb else "",
-                tb.cgst if tb else "", tb.sgst if tb else "", tb.cess if tb else "",
-                m.taxable_value_diff, m.tax_diff, ", ".join(m.diff_flags or []),
-                m.resolution_status if isinstance(m.resolution_status, str) else m.resolution_status.value,
-                m.ca_remark or "", m.client_response or "",
-            ])
+    _cover_sheet(workbook.active, case, period, run, entity, client, label)
+    workbook.active.title = "Summary"
+    for name, statuses in wanted.values():
+        _write_sheet(
+            workbook.create_sheet(title=name),
+            [m for m in rows if MatchStatus(m.match_status) in statuses],
+        )
 
     buffer = io.BytesIO()
     workbook.save(buffer)
     buffer.seek(0)
-    period = db.get(TaxPeriod, case.tax_period_id)
-    filename = f"reconciliation_{period.code}_{case_id}.xlsx"
+    stem = f"recon_{entity.gstin if entity else case_id}_{period.code if period else ''}"
+    suffix = "" if section == "all" else "_" + section
+    audit.record(
+        db, user, AuditAction.DOWNLOAD, "ReconciliationRun",
+        f"Reconciliation exported ({label})",
+        target_id=run.id, client_id=case.client_id, case_id=case.id,
+    )
+    db.commit()
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{stem}{suffix}.xlsx"'},
     )

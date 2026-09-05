@@ -738,8 +738,8 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
             </div>
             <div className="row">
               {status?.current_run && (
-                <button onClick={() => download(`/api/cases/${caseData.id}/recon/export`, `reconciliation_${caseData.period.code}.xlsx`)}>
-                  Export to Excel
+                <button onClick={() => download(`/api/cases/${caseData.id}/recon/export`, `recon_${caseData.gstin}_${caseData.period.code}.xlsx`)}>
+                  Export everything
                 </button>
               )}
               <button className="primary" onClick={run} disabled={!status?.ready_to_run || busy}>
@@ -775,6 +775,26 @@ function Reconciliation({ item, caseData, reload }: { item: ReturnItem; caseData
                   {label} ({reports.reports[key]?.length ?? 0})
                 </button>
               ))}
+            </div>
+            <div className="row between" style={{ marginTop: 10, marginBottom: 6 }}>
+              <div className="sub">
+                {reports.reports[bucket]?.length ?? 0}{" "}
+                {(reports.reports[bucket]?.length ?? 0) === 1 ? "invoice" : "invoices"} in this
+                section.
+              </div>
+              {/* Each section on its own, so a supplier can be sent just the
+                  invoices they have not reported. */}
+              <button
+                disabled={(reports.reports[bucket]?.length ?? 0) === 0}
+                onClick={() =>
+                  download(
+                    `/api/cases/${caseData.id}/recon/export?section=${bucket}`,
+                    `recon_${caseData.gstin}_${caseData.period.code}_${bucket}.xlsx`,
+                  )
+                }
+              >
+                Export this section
+              </button>
             </div>
             <MatchTable rows={reports.reports[bucket] ?? []} caseId={caseData.id} reload={load} />
           </Card>
